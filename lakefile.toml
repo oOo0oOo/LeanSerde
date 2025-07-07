@@ -1,0 +1,10 @@
+name = "LeanSerial"
+version = "0.1.0"
+defaultTargets = ["leanserial"]
+
+[[lean_lib]]
+name = "LeanSerial"
+
+[[lean_exe]]
+name = "leanserial"
+root = "Main"
