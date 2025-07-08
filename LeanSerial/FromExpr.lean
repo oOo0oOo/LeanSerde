@@ -101,7 +101,7 @@ instance [FromExpr α] : FromExpr (Array α) where
     if e.isAppOfArity ``List.toArray 1 then
       let listExpr := e.appArg!
       let list : List α ← fromExpr listExpr
-      return Array.mk list
+      return list.toArray
     else
       throwError "expected an Array, got {e}"
 

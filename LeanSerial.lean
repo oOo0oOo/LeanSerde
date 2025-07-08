@@ -27,7 +27,6 @@ private def exprToString (expr : Expr) : CoreM String := do
 
 private def serializeCore {α} [Serialization.ToExpr α] (a : α) : CoreM ByteArray := do
   let expr ← Serialization.toExpr a
-  -- Use custom string representation that preserves constructor form
   let exprStr ← exprToString expr
   return exprStr.toUTF8
 
@@ -53,18 +52,11 @@ private def deserializeCore {α} [Serialization.FromExpr α] (bytes : ByteArray)
     logInfo s!"Elaborated expression: {expr}"
     Serialization.fromExpr expr
 
--- These functions can be called from within a CommandElabM/CoreM context
-def serializeInCore {α} [Serialization.ToExpr α] (a : α) : CoreM ByteArray :=
-  serializeCore a
-
-def deserializeInCore {α} [Serialization.FromExpr α] (bytes : ByteArray) : CoreM α :=
-  deserializeCore bytes
-
 -- Simplified IO versions that create a minimal but working environment
 def serialize {α} [Serialization.ToExpr α] (a : α) : IO (Except String ByteArray) := do
   try
     -- Create an environment with the current module loaded
-    let env ← importModules #[{module := `Main}] {}
+    let env ← importModules #[{module := `LeanSerial}] {}
     let (bytes, _) ← (serializeCore a).toIO { fileName := "<serialize>", fileMap := default } { env := env, ngen := default }
     pure (.ok bytes)
   catch e =>
@@ -73,7 +65,7 @@ def serialize {α} [Serialization.ToExpr α] (a : α) : IO (Except String ByteAr
 def deserialize {α} [Serialization.FromExpr α] (bytes : ByteArray) : IO (Except String α) := do
   try
     -- Create an environment with the current module loaded
-    let env ← importModules #[{module := `Main}] {}
+    let env ← importModules #[{module := `LeanSerial}] {}
     let (a, _) ← (deserializeCore bytes).toIO { fileName := "<deserialize>", fileMap := default } { env := env, ngen := default }
     pure (.ok a)
   catch e =>

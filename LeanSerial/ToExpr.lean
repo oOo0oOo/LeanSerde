@@ -51,7 +51,7 @@ instance [ToExpr α] : ToExpr (Option α) where
 /-- Instance for `List`. Requires an instance for the inner type. -/
 instance [ToExpr α] : ToExpr (List α) where
   toExpr xs := do
-    let mut exprs ← xs.mapM toExpr
+    let exprs ← xs.mapM toExpr  -- Remove the 'mut' keyword
     let nil := mkConst ``List.nil
     let cons := mkConst ``List.cons
     return exprs.foldr (fun x acc => mkApp (mkApp cons x) acc) nil
