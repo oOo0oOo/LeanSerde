@@ -60,29 +60,20 @@ private def deserializeCore {α} [Serialization.FromExpr α] (bytes : ByteArray)
   let expr := mkAppN ctor argExprs.toArray
   Serialization.fromExpr expr
 
--- These functions can be called from within a CommandElabM/CoreM context
-def serializeInCore {α} [Serialization.ToExpr α] (a : α) : CoreM ByteArray := do
-  serializeCore a
-
-def deserializeInCore {α} [Serialization.FromExpr α] (bytes : ByteArray) : CoreM α := do
-  deserializeCore bytes
-
-def serialize {α} [Serialization.ToExpr α] (a : α) : IO (Except String ByteArray) := do
+def serialize {α} [Serialization.ToExpr α] (a : α) : IO ByteArray := do
   try
-    -- We just need any valid environment to run the CoreM computation
     let env ← importModules #[] {}
     let (bytes, _) ← (serializeCore a).toIO { fileName := "<serialize>", fileMap := default } { env := env, ngen := default }
-    pure (.ok bytes)
+    pure bytes
   catch e =>
-    pure (.error (toString e))
+    throw (IO.userError (toString e))
 
-def deserialize {α} [Serialization.FromExpr α] (bytes : ByteArray) : IO (Except String α) := do
+def deserialize {α} [Serialization.FromExpr α] (bytes : ByteArray) : IO α := do
   try
-    -- We just need any valid environment to run the CoreM computation
     let env ← importModules #[] {}
     let (a, _) ← (deserializeCore bytes).toIO { fileName := "<deserialize>", fileMap := default } { env := env, ngen := default }
-    pure (.ok a)
+    pure a
   catch e =>
-    pure (.error (toString e))
+    throw (IO.userError (toString e))
 
 end LeanSerial
