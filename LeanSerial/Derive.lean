@@ -9,8 +9,22 @@ import LeanSerial.FromExpr
 
 open Lean Elab Meta Term Command
 
--- Define the Serialize class
 class Serialize (α : Type) extends Lean.Serialization.ToExpr α, Lean.Serialization.FromExpr α
+
+structure TypeInfo where
+  name : Name
+  constructor : Name
+  numArgs : Nat
+  deriving Inhabited
+
+initialize typeRegistry : IO.Ref (List (Name × TypeInfo)) ← IO.mkRef []
+
+def registerType (info : TypeInfo) : IO Unit :=
+  typeRegistry.modify (fun list => (info.name, info) :: list)
+
+def getTypeInfo (name : Name) : IO (Option TypeInfo) := do
+  let list ← typeRegistry.get
+  return list.find? (fun (n, _) => n == name) |>.map (·.2)
 
 def mkToExprInstance (typeName : Name) : CommandElabM Unit := do
   let env ← getEnv
@@ -61,6 +75,17 @@ def mkSerializeInstance (typeName : Name) : CommandElabM Unit := do
   let typeId := mkIdent typeName
   let cmd ← `(instance : Serialize $typeId := {})
   elabCommand cmd
+
+  -- Register the type information
+  let env ← getEnv
+  let some info := getStructureInfo? env typeName | throwError "not a structure"
+  let typeInfo : TypeInfo := {
+    name := typeName,
+    constructor := typeName ++ `mk,
+    numArgs := info.fieldNames.size
+  }
+  -- The `liftIO` is necessary to call an IO function from CommandElabM
+  liftIO <| registerType typeInfo
 
 def mkSerializeInstanceHandler (declNames : Array Name) : CommandElabM Bool := do
   if (← declNames.allM fun name => do

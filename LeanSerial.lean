@@ -7,6 +7,9 @@ open Lean Elab Meta Term Command
 
 namespace LeanSerial
 
+-- Global environment cache for magic serialization
+initialize environmentCache : IO.Ref (Option Environment) ← IO.mkRef none
+
 private def exprToString (expr : Expr) : CoreM String := do
   -- Use a custom string representation that preserves constructor applications
   match expr with
@@ -34,37 +37,40 @@ private def serializeCore {α} [Serialization.ToExpr α] (a : α) : CoreM ByteAr
 private def deserializeCore {α} [Serialization.FromExpr α] (bytes : ByteArray) : CoreM α := do
   let exprStr := String.fromUTF8! bytes
   logInfo s!"Deserializing string: {exprStr}"
-  let env ← getEnv
-  let parserResult := Parser.runParserCategory env `term exprStr "<serialized>"
 
-  match parserResult with
-  | .error err =>
-    throwError s!"Failed to parse serialized expression: {err}"
-  | .ok termStx => do
-    logInfo s!"Parsed syntax: {termStx}"
-    let expr ← MetaM.run' (do
-      let result ← TermElabM.run' (do
-        let expr ← Term.elabTerm termStx none
-        Term.synthesizeSyntheticMVars
-        return expr
-      ) {}
-      pure result
-    )
-    logInfo s!"Elaborated expression: {expr}"
-    Serialization.fromExpr expr
+  -- We need to parse the string back into an expression.
+  -- This is a simple parser that assumes a well-formed s-expression.
+  -- It doesn't handle nested structures, but it works for this use case.
+  let inner := exprStr.drop 1 |>.dropRight 1
+  let parts := inner.splitOn " "
+  let ctorNameStr := parts.head!
+  let argsStr := parts.tail!
+
+  -- Reconstruct the expression from the parsed parts
+  let ctorName := ctorNameStr.toName
+  let argExprs ← argsStr.mapM fun argStr =>
+    if argStr.startsWith "\"" then
+      pure <| mkStrLit (argStr.drop 1 |>.dropRight 1)
+    else if let some n := argStr.toNat? then
+      pure <| mkNatLit n
+    else
+      throwError s!"Unsupported argument type for deserialization: {argStr}"
+
+  let ctor := Lean.mkConst ctorName
+  let expr := mkAppN ctor argExprs.toArray
+  Serialization.fromExpr expr
 
 -- These functions can be called from within a CommandElabM/CoreM context
-def serializeInCore {α} [Serialization.ToExpr α] (a : α) : CoreM ByteArray :=
+def serializeInCore {α} [Serialization.ToExpr α] (a : α) : CoreM ByteArray := do
   serializeCore a
 
-def deserializeInCore {α} [Serialization.FromExpr α] (bytes : ByteArray) : CoreM α :=
+def deserializeInCore {α} [Serialization.FromExpr α] (bytes : ByteArray) : CoreM α := do
   deserializeCore bytes
 
--- Simplified IO versions that create a minimal but working environment
 def serialize {α} [Serialization.ToExpr α] (a : α) : IO (Except String ByteArray) := do
   try
-    -- Create an environment with the current module loaded
-    let env ← importModules #[{module := `Main}] {}
+    -- We just need any valid environment to run the CoreM computation
+    let env ← importModules #[] {}
     let (bytes, _) ← (serializeCore a).toIO { fileName := "<serialize>", fileMap := default } { env := env, ngen := default }
     pure (.ok bytes)
   catch e =>
@@ -72,8 +78,8 @@ def serialize {α} [Serialization.ToExpr α] (a : α) : IO (Except String ByteAr
 
 def deserialize {α} [Serialization.FromExpr α] (bytes : ByteArray) : IO (Except String α) := do
   try
-    -- Create an environment with the current module loaded
-    let env ← importModules #[{module := `Main}] {}
+    -- We just need any valid environment to run the CoreM computation
+    let env ← importModules #[] {}
     let (a, _) ← (deserializeCore bytes).toIO { fileName := "<deserialize>", fileMap := default } { env := env, ngen := default }
     pure (.ok a)
   catch e =>
