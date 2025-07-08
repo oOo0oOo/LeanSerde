@@ -3,12 +3,9 @@ import LeanSerial
 structure MyData where
   name : String
   value : Nat
-  deriving Repr
+  deriving Repr, Serialize
 
-derive_ToExpr MyData
-derive_FromExpr MyData
 
--- Alternative approach: run serialization within CommandElabM
 #eval do
   let data : MyData := { name := "hello", value := 42 }
 

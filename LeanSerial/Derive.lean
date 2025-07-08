@@ -3,10 +3,14 @@ import Lean.Meta
 import Lean.Elab
 import Lean.Parser
 import Lean.Elab.Command
+import Lean.Elab.Deriving.Basic
 import LeanSerial.ToExpr
 import LeanSerial.FromExpr
 
 open Lean Elab Meta Term Command
+
+-- Define the Serialize class
+class Serialize (α : Type) extends Lean.Serialization.ToExpr α, Lean.Serialization.FromExpr α
 
 def mkToExprInstance (typeName : Name) : CommandElabM Unit := do
   let env ← getEnv
@@ -48,10 +52,25 @@ def mkFromExprInstance (typeName : Name) : CommandElabM Unit := do
   else
     throwError s!"FromExpr derivation currently only supports structures with exactly 2 fields, got {fieldCount}"
 
-elab "derive_ToExpr " id:ident : command => do
-  let typeName := id.getId
+def mkSerializeInstance (typeName : Name) : CommandElabM Unit := do
+  -- Generate ToExpr and FromExpr instances
   mkToExprInstance typeName
-
-elab "derive_FromExpr " id:ident : command => do
-  let typeName := id.getId
   mkFromExprInstance typeName
+
+  -- Generate the Serialize instance
+  let typeId := mkIdent typeName
+  let cmd ← `(instance : Serialize $typeId := {})
+  elabCommand cmd
+
+def mkSerializeInstanceHandler (declNames : Array Name) : CommandElabM Bool := do
+  if (← declNames.allM fun name => do
+    let env ← getEnv
+    return getStructureInfo? env name |>.isSome) then
+    for declName in declNames do
+      mkSerializeInstance declName
+    return true
+  else
+    return false
+
+initialize
+  registerDerivingHandler `Serialize mkSerializeInstanceHandler
