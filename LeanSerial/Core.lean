@@ -1,51 +1,57 @@
 import Lean
-import LeanSerial.Derive
-
-open Lean Elab Meta Term Command
 
 namespace LeanSerial
 
-private def exprToString (expr : Expr) : CoreM String := do
-  match expr with
-  | .app (.app (.const name _) arg1) arg2 => do
-    let arg1Str ← exprToString arg1
-    let arg2Str ← exprToString arg2
-    return s!"({name} {arg1Str} {arg2Str})"
-  | .app (.const name _) arg => do
-    let argStr ← exprToString arg
-    return s!"({name} {argStr})"
-  | .const name _ => return s!"{name}"
-  | .lit (.strVal s) => return s!"\"{s}\""
-  | .lit (.natVal n) => return s!"{n}"
-  | _ =>
-    let fmt ← MetaM.run' (PrettyPrinter.ppExpr expr)
-    return toString fmt
+/--
+Simplified serialization format with unified structure.
+Primitives have no type witnesses for efficiency.
+-/
+inductive SerialValue where
+  | str : String → SerialValue
+  | nat : Nat → SerialValue
+  | bool : Bool → SerialValue
+  | compound : String → Array SerialValue → SerialValue
+  deriving Repr, BEq, Inhabited
 
-private def stringToExpr (exprStr : String) : CoreM Expr := do
-  -- Simple s-expression parser (flat, not nested)
-  let inner := exprStr.drop 1 |>.dropRight 1
-  let parts := inner.splitOn " "
-  let ctorNameStr := parts.head!
-  let argsStr := parts.tail!
-  let ctorName := ctorNameStr.toName
-  let argExprs ← argsStr.mapM fun argStr =>
-    if argStr.startsWith "\"" then
-      pure <| mkStrLit (argStr.drop 1 |>.dropRight 1)
-    else if let some n := argStr.toNat? then
-      pure <| mkNatLit n
-    else
-      throwError s!"Unsupported argument type for deserialization: {argStr}"
-  let ctor := Lean.mkConst ctorName
-  pure <| mkAppN ctor argExprs.toArray
+namespace SerialValue
 
-def serializeCore {α} [Serialization.ToExpr α] (a : α) : CoreM ByteArray := do
-  let expr ← Serialization.toExpr a
-  let exprStr ← exprToString expr
-  return exprStr.toUTF8
+/-- Convert SerialValue to JSON-like string representation -/
+def toString : SerialValue → String
+  | str s => s!"\"{s}\""
+  | nat n => Nat.repr n
+  | bool b => if b then "true" else "false"
+  | compound name children =>
+  let childrenStr := String.intercalate "," (children.map toString).toList
+  s!"\{\"type\":\"{name}\",\"args\":[{childrenStr}]}"
 
-def deserializeCore {α} [Serialization.FromExpr α] (bytes : ByteArray) : CoreM α := do
-  let exprStr := String.fromUTF8! bytes
-  let expr ← stringToExpr exprStr
-  Serialization.fromExpr expr
+/-- Parse JSON-like string back to SerialValue -/
+private def parseCompound (s : String) : Except String SerialValue :=
+  -- Simplified parsing for MVP
+  .error "Compound parsing not implemented in MVP"
+
+partial def fromString (s : String) : Except String SerialValue :=
+  -- Simple parser for MVP - would use proper JSON parser in production
+  if s.startsWith "\"" && s.endsWith "\"" then
+    .ok (str (s.drop 1 |>.dropRight 1))
+  else if s == "true" then
+    .ok (bool true)
+  else if s == "false" then
+    .ok (bool false)
+  else if let some n := s.toNat? then
+    .ok (nat n)
+  else if s.startsWith "{\"type\":" then
+    parseCompound s
+  else
+    .error s!"Invalid SerialValue format: {s}"
+
+end SerialValue
+
+def serializeValue (sv : SerialValue) : ByteArray :=
+  sv.toString.toUTF8
+
+def deserializeValue (bytes : ByteArray) : Except String SerialValue :=
+  match String.fromUTF8? bytes with
+  | none => .error "Invalid UTF-8 in serialized data"
+  | some s => SerialValue.fromString s
 
 end LeanSerial

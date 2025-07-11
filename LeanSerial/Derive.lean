@@ -1,101 +1,41 @@
 import Lean
-import Lean.Meta
-import Lean.Elab
-import Lean.Parser
 import Lean.Elab.Command
 import Lean.Elab.Deriving.Basic
-import LeanSerial.ToExpr
-import LeanSerial.FromExpr
+import LeanSerial.Serializable
 
 open Lean Elab Meta Term Command
 
-class Serialize (α : Type) extends Lean.Serialization.ToExpr α, Lean.Serialization.FromExpr α
-
-structure TypeInfo where
-  name : Name
-  constructor : Name
-  numArgs : Nat
-  deriving Inhabited
-
-initialize typeRegistry : IO.Ref (List (Name × TypeInfo)) ← IO.mkRef []
-
-def registerType (info : TypeInfo) : IO Unit :=
-  typeRegistry.modify (fun list => (info.name, info) :: list)
-
-def getTypeInfo (name : Name) : IO (Option TypeInfo) := do
-  let list ← typeRegistry.get
-  return list.find? (fun (n, _) => n == name) |>.map (·.2)
-
-def mkToExprInstance (typeName : Name) : CommandElabM Unit := do
-  let env ← getEnv
-  let some info := getStructureInfo? env typeName | throwError "not a structure"
-  let typeId := mkIdent typeName
-  let fieldIds := info.fieldNames.map mkIdent
-  -- For structures, use the constructor name (typeName.mk)
-  let constructorName := typeName ++ `mk
-  let cmd ← `(
-    instance : Lean.Serialization.ToExpr $typeId where
-      toExpr v := do
-        let fieldExprs ← #[ $[(Lean.Serialization.toExpr v.$(fieldIds):ident)],* ].mapM id
-        return mkAppN (mkConst $(quote constructorName)) fieldExprs
-  )
-  elabCommand cmd
-
-def mkFromExprInstance (typeName : Name) : CommandElabM Unit := do
+def mkSerializableInstance (typeName : Name) : CommandElabM Unit := do
   let env ← getEnv
   let some info := getStructureInfo? env typeName | throwError "not a structure"
   let typeId := mkIdent typeName
   let fieldIds := info.fieldNames.map mkIdent
   let fieldCount := info.fieldNames.size
-  -- For structures, use the constructor name (typeName.mk)
-  let constructorName := typeName ++ `mk
-
   if fieldCount == 2 then
     let cmd ← `(
-      instance : Lean.Serialization.FromExpr $typeId where
-        fromExpr e := do
-          -- Check if this is the expected constructor
-          if !e.isAppOfArity $(quote constructorName) $(quote fieldCount) then
-            throwError s!"expected {$(quote constructorName)} with {$(quote fieldCount)} arguments, got {e}"
-          let args := e.getAppArgs
-          let field0 ← Lean.Serialization.fromExpr args[0]!
-          let field1 ← Lean.Serialization.fromExpr args[1]!
+      instance : LeanSerial.Serializable $typeId where
+        encode v := LeanSerial.SerialValue.compound $(quote typeName.toString) #[LeanSerial.encode v.$(fieldIds[0]!), LeanSerial.encode v.$(fieldIds[1]!)]
+        decode sv := do
+          let args ← LeanSerial.decodeCompound $(quote typeName.toString) sv
+          if args.size ≠ $(quote fieldCount) then
+            .error s!"Expected $(quote fieldCount) fields, got {args.size}"
+          let field0 ← LeanSerial.decode args[0]!
+          let field1 ← LeanSerial.decode args[1]!
           return { $(fieldIds[0]!):ident := field0, $(fieldIds[1]!):ident := field1 }
     )
     elabCommand cmd
   else
-    throwError s!"FromExpr derivation currently only supports structures with exactly 2 fields, got {fieldCount}"
+    throwError s!"Serializable derivation currently only supports structures with exactly 2 fields, got {fieldCount}"
 
-def mkSerializeInstance (typeName : Name) : CommandElabM Unit := do
-  -- Generate ToExpr and FromExpr instances
-  mkToExprInstance typeName
-  mkFromExprInstance typeName
-
-  -- Generate the Serialize instance
-  let typeId := mkIdent typeName
-  let cmd ← `(instance : Serialize $typeId := {})
-  elabCommand cmd
-
-  -- Register the type information
-  let env ← getEnv
-  let some info := getStructureInfo? env typeName | throwError "not a structure"
-  let typeInfo : TypeInfo := {
-    name := typeName,
-    constructor := typeName ++ `mk,
-    numArgs := info.fieldNames.size
-  }
-  -- The `liftIO` is necessary to call an IO function from CommandElabM
-  liftIO <| registerType typeInfo
-
-def mkSerializeInstanceHandler (declNames : Array Name) : CommandElabM Bool := do
+def mkSerializableInstanceHandler (declNames : Array Name) : CommandElabM Bool := do
   if (← declNames.allM fun name => do
     let env ← getEnv
     return getStructureInfo? env name |>.isSome) then
     for declName in declNames do
-      mkSerializeInstance declName
+      mkSerializableInstance declName
     return true
   else
     return false
 
 initialize
-  registerDerivingHandler `Serialize mkSerializeInstanceHandler
+  registerDerivingHandler ``LeanSerial.Serializable mkSerializableInstanceHandler
