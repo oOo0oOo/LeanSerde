@@ -1,11 +1,7 @@
-import Lean
+import Lean.Data.Json
 
 namespace LeanSerial
 
-/--
-Simplified serialization format with unified structure.
-Primitives have no type witnesses for efficiency.
--/
 inductive SerialValue where
   | str : String → SerialValue
   | nat : Nat → SerialValue
@@ -15,91 +11,68 @@ inductive SerialValue where
 
 namespace SerialValue
 
-/-- Convert SerialValue to string representation -/
-def toString : SerialValue → String
-  | str s => s!"\"{s}\""
-  | nat n => Nat.repr n
-  | bool b => if b then "true" else "false"
+def toJsonImpl : SerialValue → Lean.Json
+  | str s    => Lean.Json.str s
+  | nat n    => Lean.Json.num n
+  | bool b   => Lean.Json.bool b
   | compound name children =>
-  let childrenStr := String.intercalate "," (children.map toString).toList
-  s!"\{\"type\":\"{name}\",\"args\":[{childrenStr}]}"
+    Lean.Json.mkObj [("type", Lean.Json.str name), ("args", Lean.Json.arr (children.map toJsonImpl))]
 
 mutual
-  private partial def parseArgs (s : String) : Except String (List SerialValue) := do
-    let mut args := []
-    let mut current := ""
-    let mut nesting := 0
-    let mut inString := false
-    for c in s.toList do
-      if c == '\"' then
-        inString := not inString
-        current := current.push c
-      else if not inString && c == '{' then
-        nesting := nesting + 1
-        current := current.push c
-      else if not inString && c == '}' then
-        nesting := nesting - 1
-        current := current.push c
-      else if not inString && nesting == 0 && c == ',' then
-        if current.isEmpty then
-          -- allow for trailing comma
-          continue
-        let arg ← fromString current
-        args := arg :: args
-        current := ""
-      else
-        current := current.push c
-    if !current.isEmpty then
-      let arg ← fromString current
-      args := arg :: args
-    return args.reverse
 
-  private partial def parseCompound (s : String) : Except String SerialValue := do
-    if !s.startsWith "{\"type\":\"" || !s.endsWith "}" then
-      throw s!"Invalid compound format: {s}"
-    else
-      -- Remove {"type":" and "}
-      let content := s.drop 9 |>.dropRight 1
+partial def fromJsonArrayImpl : Lean.Json → Except String (Array SerialValue)
+  | Lean.Json.arr arr => do
+    let values ← arr.mapM fromJsonImpl
+    pure values
+  | _ => throw "Expected JSON array"
 
-      -- Find where the type name ends (look for ","args":[)
-      let typeEndPattern := "\",\"args\":["
-      match content.splitOn typeEndPattern with
-      | [typeName, argsContent] =>
-        -- Remove the trailing ] from argsContent
-        let argsString := argsContent.dropRight 1
-        if argsString.isEmpty then
-          return compound typeName #[]
-        else
-          let argsList ← parseArgs argsString
-          return compound typeName argsList.toArray
-      | _ => throw s!"Invalid compound format, could not parse: {s}"
+partial def fromJsonImpl : Lean.Json → Except String SerialValue
+  | Lean.Json.str s => pure (SerialValue.str s)
+  | Lean.Json.num n =>
+    match n.mantissa, n.exponent with
+    | m, 0 => if m >= 0 then pure (SerialValue.nat m.natAbs) else throw s!"Expected natural number, got negative {m}"
+    | _, _ => throw s!"Expected integer, got decimal {n}"
+  | Lean.Json.bool b => pure (SerialValue.bool b)
+  | Lean.Json.obj o => do
+    let fields := o.fold (fun acc k v => (k, v) :: acc) []
 
-  partial def fromString (s : String) : Except String SerialValue :=
-    let s := s.trim
-    if s.startsWith "\"" && s.endsWith "\"" then
-      .ok (str (s.drop 1 |>.dropRight 1))
-    else if s == "true" then
-      .ok (bool true)
-    else if s == "false" then
-      .ok (bool false)
-    else
-      match s.toNat? with
-      | some n => .ok (nat n)
-      | none =>
-        if s.startsWith "{\"type\":" then
-          parseCompound s
-        else
-          .error s!"Invalid SerialValue format: {s}"
+    let typeName ← match fields.find? (fun (k, _) => k == "type") with
+      | some (_, Lean.Json.str s) => pure s
+      | some (_, _) => throw "Expected string value for 'type' field"
+      | none => throw "Missing 'type' field in compound object"
+
+    let argsJson ← match fields.find? (fun (k, _) => k == "args") with
+      | some (_, argsJson) => pure argsJson
+      | none => throw "Missing 'args' field in compound object"
+
+    let args ← fromJsonArrayImpl argsJson
+    pure (SerialValue.compound typeName args)
+  | _ => throw "Invalid JSON structure for SerialValue."
+
 end
+
+instance : Lean.ToJson SerialValue where
+  toJson := toJsonImpl
+
+instance : Lean.ToJson (Array SerialValue) where
+  toJson arr := Lean.Json.arr (arr.map toJsonImpl)
+
+instance : Lean.FromJson SerialValue where
+  fromJson? := fromJsonImpl
+
+instance : Lean.FromJson (Array SerialValue) where
+  fromJson? := fromJsonArrayImpl
 
 end SerialValue
 
 def serializeValue (sv : SerialValue) : ByteArray :=
-  sv.toString.toUTF8
+  (Lean.toJson sv).compress.toUTF8
 
-def deserializeValue (bytes : ByteArray) : Except String SerialValue :=
-  match String.fromUTF8? bytes with
-  | none => .error "Invalid UTF-8 in serialized data"
-  | some s => SerialValue.fromString s
+def deserializeValue (bytes : ByteArray) : Except String SerialValue := do
+  let s ← match String.fromUTF8? bytes with
+    | some str => pure str
+    | none     => throw "Invalid UTF-8 in serialized data"
+  let json ← Lean.Json.parse s
+  Lean.fromJson? json
 
 end LeanSerial
