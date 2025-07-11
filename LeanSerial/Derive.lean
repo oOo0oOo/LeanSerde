@@ -46,165 +46,235 @@ def mkSerializableInstance (ctor : ConstructorVal) (typeName : Name) : CommandEl
         let args ← LeanSerial.decodeCompound $(quote ctor.name.toString) sv
         if args.size = $(quote fieldCount) then do
           $[$(decodeStmts.toArray):doElem]*
-          return $ctorApp
+          .ok $ctorApp
         else
           .error "Field count mismatch"
   )
   elabCommand cmd
 
--- Single constructor case
-def mkSerializableInstanceSingle (typeId : Ident) (ctor : ConstructorVal) : CommandElabM Unit := do
-  let ctorId := mkIdent ctor.name
-  let fieldCount := ctor.numFields
+-- def mkSerializableInstanceForInductive (typeName : Name) : CommandElabM Unit := do
+--   let env ← getEnv
+--   let some (ConstantInfo.inductInfo inductVal) := env.find? typeName | throwError "not an inductive type"
 
-  let fieldIds := (List.range fieldCount).map fun i => mkIdent (Name.mkSimple s!"field{i}")
+--   let typeId := mkIdent typeName
+
+--   let constructorInfos ← inductVal.ctors.mapM fun ctorName => do
+--     let some (ConstantInfo.ctorInfo ctorVal) := env.find? ctorName | throwError s!"constructor {ctorName} not found"
+--     return ctorVal
+
+--   if constructorInfos.isEmpty then
+--     throwError "Empty inductive type"
+
+--   -- Build the instance manually with proper syntax
+--   match constructorInfos with
+--   | [ctor] =>
+--     -- Single constructor case
+--     let ctorId := mkIdent ctor.name
+--     let fieldIds := (List.range ctor.numFields).map fun i => mkIdent (Name.mkSimple s!"field{i}")
+--     let fieldTerms := fieldIds.map fun fieldId => ⟨fieldId⟩
+
+--     if ctor.numFields = 0 then
+--       let cmd ← `(
+--         instance : LeanSerial.Serializable $typeId where
+--           encode
+--             | $(ctorId) => LeanSerial.SerialValue.compound $(quote ctor.name.toString) #[]
+--           decode sv := do
+--             let .compound ctor args := sv | .error "Expected compound value"
+--             match ctor with
+--             | $(quote ctor.name.toString) => do
+--               if args.size = 0 then .ok $(ctorId)
+--               else .error "Field count mismatch"
+--             | _ => .error "Unknown constructor"
+--       )
+--       elabCommand cmd
+--     else
+--       let encodeElems ← fieldTerms.mapM fun fieldTerm => `(LeanSerial.encode $fieldTerm)
+--       let decodeStmts ← fieldIds.mapIdxM fun i fieldId => do
+--         `(doElem| let $fieldId ← LeanSerial.decode args[$(quote i)]!)
+--       let fieldArray := fieldTerms.toArray
+--       let ctorApp ← fieldTerms.foldlM (fun acc fieldTerm => `($acc $fieldTerm)) (⟨ctorId⟩ : TSyntax `term)
+
+--       let cmd ← `(
+--         instance : LeanSerial.Serializable $typeId where
+--           encode
+--             | $(ctorId) $fieldArray* => LeanSerial.SerialValue.compound $(quote ctor.name.toString) #[$(encodeElems.toArray),*]
+--           decode sv := do
+--             let .compound ctor args := sv | .error "Expected compound value"
+--             match ctor with
+--             | $(quote ctor.name.toString) => do
+--               if args.size = $(quote ctor.numFields) then do
+--                 $[$(decodeStmts.toArray):doElem]*
+--                 .ok $ctorApp
+--               else
+--                 .error "Field count mismatch"
+--             | _ => .error "Unknown constructor"
+--       )
+--       elabCommand cmd
+--   | _ =>
+--     -- Multiple constructors case - generate explicit instance
+--     let mut encodeArms := #[]
+--     let mut decodeArms := #[]
+
+--     for ctor in constructorInfos do
+--       let ctorId := mkIdent ctor.name
+--       let fieldIds := (List.range ctor.numFields).map fun i => mkIdent (Name.mkSimple s!"field{i}")
+--       let fieldTerms := fieldIds.map fun fieldId => ⟨fieldId⟩
+
+--       -- Generate encode arm
+--       if ctor.numFields = 0 then
+--         encodeArms := encodeArms.push (ctorId, none, ← `(LeanSerial.SerialValue.compound $(quote ctor.name.toString) #[]))
+--       else
+--         let encodeElems ← fieldTerms.mapM fun fieldTerm => `(LeanSerial.encode $fieldTerm)
+--         let fieldArray := fieldTerms.toArray
+--         encodeArms := encodeArms.push (ctorId, some fieldArray, ← `(LeanSerial.SerialValue.compound $(quote ctor.name.toString) #[$(encodeElems.toArray),*]))
+
+--       -- Generate decode statements
+--       let decodeStmts ← fieldIds.mapIdxM fun i fieldId => do
+--         `(doElem| let $fieldId ← LeanSerial.decode args[$(quote i)]!)
+
+--       let ctorApp ← if ctor.numFields = 0 then
+--         pure ⟨ctorId⟩
+--       else
+--         fieldTerms.foldlM (fun acc fieldTerm => `($acc $fieldTerm)) (⟨ctorId⟩ : TSyntax `term)
+
+--       decodeArms := decodeArms.push (ctor.name.toString, ctor.numFields, decodeStmts.toArray, ctorApp)
+
+--     -- Manually construct the command syntax using the single constructor working pattern
+--     match constructorInfos with
+--     | [] => throwError "Empty inductive type"
+--     | [ctor] =>
+--       -- Single constructor - use existing working code
+--       let ctorId := mkIdent ctor.name
+--       let fieldIds := (List.range ctor.numFields).map fun i => mkIdent (Name.mkSimple s!"field{i}")
+--       let fieldTerms := fieldIds.map fun fieldId => ⟨fieldId⟩
+
+--       if ctor.numFields = 0 then
+--         let cmd ← `(
+--           instance : LeanSerial.Serializable $typeId where
+--             encode
+--               | $(ctorId) => LeanSerial.SerialValue.compound $(quote ctor.name.toString) #[]
+--             decode sv := do
+--               let .compound ctor args := sv | .error "Expected compound value"
+--               match ctor with
+--               | $(quote ctor.name.toString) => do
+--                 if args.size = 0 then .ok $(ctorId)
+--                 else .error "Field count mismatch"
+--               | _ => .error "Unknown constructor"
+--         )
+--         elabCommand cmd
+--       else
+--         let encodeElems ← fieldTerms.mapM fun fieldTerm => `(LeanSerial.encode $fieldTerm)
+--         let decodeStmts ← fieldIds.mapIdxM fun i fieldId => do
+--           `(doElem| let $fieldId ← LeanSerial.decode args[$(quote i)]!)
+--         let fieldArray := fieldTerms.toArray
+--         let ctorApp ← fieldTerms.foldlM (fun acc fieldTerm => `($acc $fieldTerm)) (⟨ctorId⟩ : TSyntax `term)
+
+--         let cmd ← `(
+--           instance : LeanSerial.Serializable $typeId where
+--             encode
+--               | $(ctorId) $fieldArray* => LeanSerial.SerialValue.compound $(quote ctor.name.toString) #[$(encodeElems.toArray),*]
+--             decode sv := do
+--               let .compound ctor args := sv | .error "Expected compound value"
+--               match ctor with
+--               | $(quote ctor.name.toString) => do
+--                 if args.size = $(quote ctor.numFields) then do
+--                   $[$(decodeStmts.toArray):doElem]*
+--                   .ok $ctorApp
+--                 else
+--                   .error "Field count mismatch"
+--               | _ => .error "Unknown constructor"
+--         )
+--         elabCommand cmd
+--     | _ =>
+--       -- Multiple constructors - implement general case
+--       throwError s!"Multiple constructor types with {constructorInfos.length} constructors not yet fully supported"
+
+-- -- Helper function for single constructor instance generation
+-- def mkSingleConstructorInstance (ctor : ConstructorVal) (typeId : TSyntax `ident) : CommandElabM Unit := do
+--   let ctorId := mkIdent ctor.name
+--   let fieldIds := (List.range ctor.numFields).map fun i => mkIdent (Name.mkSimple s!"field{i}")
+--   let fieldTerms := fieldIds.map fun fieldId => ⟨fieldId⟩
+
+--   if ctor.numFields = 0 then
+--     let cmd ← `(
+--       instance : LeanSerial.Serializable $typeId where
+--         encode
+--           | $(ctorId) => LeanSerial.SerialValue.compound $(quote ctor.name.toString) #[]
+--         decode sv := do
+--           let .compound ctor args := sv | .error "Expected compound value"
+--           match ctor with
+--           | $(quote ctor.name.toString) => do
+--             if args.size = 0 then .ok $(ctorId)
+--             else .error "Field count mismatch"
+--           | _ => .error "Unknown constructor"
+--     )
+--     -- Log info
+--     IO.println s!"Generating Serializable instance for {typeId} with single constructor {ctor.name}"
+--     elabCommand cmd
+--   else
+--     let encodeElems ← fieldTerms.mapM fun fieldTerm => `(LeanSerial.encode $fieldTerm)
+--     let decodeStmts ← fieldIds.mapIdxM fun i fieldId => do
+--       `(doElem| let $fieldId ← LeanSerial.decode args[$(quote i)]!)
+--     let fieldArray := fieldTerms.toArray
+--     let ctorApp ← fieldTerms.foldlM (fun acc fieldTerm => `($acc $fieldTerm)) (⟨ctorId⟩ : TSyntax `term)
+
+--     let cmd ← `(
+--       instance : LeanSerial.Serializable $typeId where
+--         encode
+--           | $(ctorId) $fieldArray* => LeanSerial.SerialValue.compound $(quote ctor.name.toString) #[$(encodeElems.toArray),*]
+--         decode sv := do
+--           let .compound ctor args := sv | .error "Expected compound value"
+--           match ctor with
+--           | $(quote ctor.name.toString) => do
+--             if args.size = $(quote ctor.numFields) then do
+--               $[$(decodeStmts.toArray):doElem]*
+--               .ok $ctorApp
+--             else
+--               .error "Field count mismatch"
+--           | _ => .error "Unknown constructor"
+--     )
+--     -- Log info
+--     IO.println s!"Generating Serializable instance for {typeId} with multiple constructors {ctor.name}"
+--     elabCommand cmd
+
+
+def mkSingleConstructorInstance (ctor : ConstructorVal) (typeId : TSyntax `ident) : CommandElabM Unit := do
+  let ctorId := mkIdent ctor.name
+  let fieldIds := (List.range ctor.numFields).map fun i => mkIdent (Name.mkSimple s!"field{i}")
   let fieldTerms := fieldIds.map fun fieldId => ⟨fieldId⟩
 
   let encodeElems ← fieldTerms.mapM fun fieldTerm => `(LeanSerial.encode $fieldTerm)
+
   let decodeStmts ← fieldIds.mapIdxM fun i fieldId => do
     `(doElem| let $fieldId ← LeanSerial.decode args[$(quote i)]!)
 
-  let ctorApp ← fieldTerms.foldlM (fun acc fieldTerm => `($acc $fieldTerm)) ⟨ctorId⟩
+  let ctorApp ← fieldTerms.foldlM (fun acc fieldTerm => `($acc $fieldTerm)) (⟨ctorId⟩ : TSyntax `term)
 
-  let pattern ←
-    match fieldCount with
-    | 0 => pure ⟨ctorId⟩
-    | _ => `($ctorId $fieldTerms.toArray*)
+  let encodePattern ← if ctor.numFields = 0 then
+    pure ⟨ctorId⟩
+  else
+    let fieldArray := fieldTerms.toArray
+    pure ⟨← `($(ctorId) $fieldArray*)⟩
 
   let cmd ← `(
     instance : LeanSerial.Serializable $typeId where
-      encode v := match v with
-        | $pattern => LeanSerial.SerialValue.compound $(quote ctor.name.toString) #[$encodeElems.toArray,*]
+      encode
+        | $encodePattern => LeanSerial.SerialValue.compound $(quote ctor.name.toString) #[$(encodeElems.toArray),*]
       decode sv := do
         let .compound ctor args := sv | .error "Expected compound value"
         match ctor with
-        | $(quote ctor.name.toString) =>
-          if args.size = $(quote fieldCount) then do
+        | $(quote ctor.name.toString) => do
+          if args.size = $(quote ctor.numFields) then do
             $[$(decodeStmts.toArray):doElem]*
-            return $ctorApp
+            .ok $ctorApp
           else
             .error "Field count mismatch"
         | _ => .error "Unknown constructor"
   )
-  elabCommand cmd
 
--- Two constructors case
-def mkSerializableInstanceTwo (typeId : Ident) (ctor0 ctor1 : ConstructorVal) : CommandElabM Unit := do
-  let ctor0Id := mkIdent ctor0.name
-  let ctor1Id := mkIdent ctor1.name
-
-  -- Handle ctor0
-  let fieldIds0 := (List.range ctor0.numFields).map fun i => mkIdent (Name.mkSimple s!"field{i}")
-  let fieldTerms0 := fieldIds0.map fun fieldId => ⟨fieldId⟩
-  let encodeElems0 ← fieldTerms0.mapM fun fieldTerm => `(LeanSerial.encode $fieldTerm)
-  let decodeStmts0 ← fieldIds0.mapIdxM fun i fieldId => do
-    `(doElem| let $fieldId ← LeanSerial.decode args[$(quote i)]!)
-  let ctorApp0 ← fieldTerms0.foldlM (fun acc fieldTerm => `($acc $fieldTerm)) ⟨ctor0Id⟩
-
-  let pattern0 ←
-    match ctor0.numFields with
-    | 0 => pure ⟨ctor0Id⟩
-    | _ => `($ctor0Id $fieldTerms0.toArray*)
-
-  -- Handle ctor1
-  let fieldIds1 := (List.range ctor1.numFields).map fun i => mkIdent (Name.mkSimple s!"field{i}")
-  let fieldTerms1 := fieldIds1.map fun fieldId => ⟨fieldId⟩
-  let encodeElems1 ← fieldTerms1.mapM fun fieldTerm => `(LeanSerial.encode $fieldTerm)
-  let decodeStmts1 ← fieldIds1.mapIdxM fun i fieldId => do
-    `(doElem| let $fieldId ← LeanSerial.decode args[$(quote i)]!)
-  let ctorApp1 ← fieldTerms1.foldlM (fun acc fieldTerm => `($acc $fieldTerm)) ⟨ctor1Id⟩
-
-  let pattern1 ←
-    match ctor1.numFields with
-    | 0 => pure ⟨ctor1Id⟩
-    | _ => `($ctor1Id $fieldTerms1.toArray*)
-
-  let cmd ← `(
-    instance : LeanSerial.Serializable $typeId where
-      encode v := match v with
-        | $pattern0 => LeanSerial.SerialValue.compound $(quote ctor0.name.toString) #[$encodeElems0.toArray,*]
-        | $pattern1 => LeanSerial.SerialValue.compound $(quote ctor1.name.toString) #[$encodeElems1.toArray,*]
-      decode sv := do
-        let .compound ctor args := sv | .error "Expected compound value"
-        match ctor with
-        | $(quote ctor0.name.toString) =>
-          if args.size = $(quote ctor0.numFields) then do
-            $[$(decodeStmts0.toArray):doElem]*
-            return $ctorApp0
-          else
-            .error "Field count mismatch"
-        | $(quote ctor1.name.toString) =>
-          if args.size = $(quote ctor1.numFields) then do
-            $[$(decodeStmts1.toArray):doElem]*
-            return $ctorApp1
-          else
-            .error "Field count mismatch"
-        | _ => .error "Unknown constructor"
-  )
-  elabCommand cmd
-
--- Three constructors case
-def mkSerializableInstanceThree (typeId : Ident) (ctor0 ctor1 ctor2 : ConstructorVal) : CommandElabM Unit := do
-  let ctor0Id := mkIdent ctor0.name
-  let ctor1Id := mkIdent ctor1.name
-  let ctor2Id := mkIdent ctor2.name
-
-  -- Handle ctor0
-  let fieldIds0 := (List.range ctor0.numFields).map fun i => mkIdent (Name.mkSimple s!"field{i}")
-  let fieldTerms0 := fieldIds0.map fun fieldId => ⟨fieldId⟩
-  let encodeElems0 ← fieldTerms0.mapM fun fieldTerm => `(LeanSerial.encode $fieldTerm)
-  let decodeStmts0 ← fieldIds0.mapIdxM fun i fieldId => do
-    `(doElem| let $fieldId ← LeanSerial.decode args[$(quote i)]!)
-  let ctorApp0 ← fieldTerms0.foldlM (fun acc fieldTerm => `($acc $fieldTerm)) ⟨ctor0Id⟩
-  let pattern0 ← match ctor0.numFields with | 0 => pure ⟨ctor0Id⟩ | _ => `($ctor0Id $fieldTerms0.toArray*)
-
-  -- Handle ctor1
-  let fieldIds1 := (List.range ctor1.numFields).map fun i => mkIdent (Name.mkSimple s!"field{i}")
-  let fieldTerms1 := fieldIds1.map fun fieldId => ⟨fieldId⟩
-  let encodeElems1 ← fieldTerms1.mapM fun fieldTerm => `(LeanSerial.encode $fieldTerm)
-  let decodeStmts1 ← fieldIds1.mapIdxM fun i fieldId => do
-    `(doElem| let $fieldId ← LeanSerial.decode args[$(quote i)]!)
-  let ctorApp1 ← fieldTerms1.foldlM (fun acc fieldTerm => `($acc $fieldTerm)) ⟨ctor1Id⟩
-  let pattern1 ← match ctor1.numFields with | 0 => pure ⟨ctor1Id⟩ | _ => `($ctor1Id $fieldTerms1.toArray*)
-
-  -- Handle ctor2
-  let fieldIds2 := (List.range ctor2.numFields).map fun i => mkIdent (Name.mkSimple s!"field{i}")
-  let fieldTerms2 := fieldIds2.map fun fieldId => ⟨fieldId⟩
-  let encodeElems2 ← fieldTerms2.mapM fun fieldTerm => `(LeanSerial.encode $fieldTerm)
-  let decodeStmts2 ← fieldIds2.mapIdxM fun i fieldId => do
-    `(doElem| let $fieldId ← LeanSerial.decode args[$(quote i)]!)
-  let ctorApp2 ← fieldTerms2.foldlM (fun acc fieldTerm => `($acc $fieldTerm)) ⟨ctor2Id⟩
-  let pattern2 ← match ctor2.numFields with | 0 => pure ⟨ctor2Id⟩ | _ => `($ctor2Id $fieldTerms2.toArray*)
-
-  let cmd ← `(
-    instance : LeanSerial.Serializable $typeId where
-      encode v := match v with
-        | $pattern0 => LeanSerial.SerialValue.compound $(quote ctor0.name.toString) #[$encodeElems0.toArray,*]
-        | $pattern1 => LeanSerial.SerialValue.compound $(quote ctor1.name.toString) #[$encodeElems1.toArray,*]
-        | $pattern2 => LeanSerial.SerialValue.compound $(quote ctor2.name.toString) #[$encodeElems2.toArray,*]
-      decode sv := do
-        let .compound ctor args := sv | .error "Expected compound value"
-        match ctor with
-        | $(quote ctor0.name.toString) =>
-          if args.size = $(quote ctor0.numFields) then do
-            $[$(decodeStmts0.toArray):doElem]*
-            return $ctorApp0
-          else
-            .error "Field count mismatch"
-        | $(quote ctor1.name.toString) =>
-          if args.size = $(quote ctor1.numFields) then do
-            $[$(decodeStmts1.toArray):doElem]*
-            return $ctorApp1
-          else
-            .error "Field count mismatch"
-        | $(quote ctor2.name.toString) =>
-          if args.size = $(quote ctor2.numFields) then do
-            $[$(decodeStmts2.toArray):doElem]*
-            return $ctorApp2
-          else
-            .error "Field count mismatch"
-        | _ => .error "Unknown constructor"
-  )
+  -- Log info
+  let fieldDesc := if ctor.numFields = 0 then "no fields" else s!"{ctor.numFields} fields"
+  IO.println s!"Generating Serializable instance for {typeId} with single constructor {ctor.name} ({fieldDesc})"
   elabCommand cmd
 
 def mkSerializableInstanceForInductive (typeName : Name) : CommandElabM Unit := do
@@ -213,37 +283,69 @@ def mkSerializableInstanceForInductive (typeName : Name) : CommandElabM Unit := 
 
   let typeId := mkIdent typeName
 
-  -- Handle all cases uniformly - no special cases
   let constructorInfos ← inductVal.ctors.mapM fun ctorName => do
     let some (ConstantInfo.ctorInfo ctorVal) := env.find? ctorName | throwError s!"constructor {ctorName} not found"
     return ctorVal
 
+  if constructorInfos.isEmpty then
+    throwError "Empty inductive type"
+
   match constructorInfos with
-  | [] => throwError "Empty inductive type"
   | [ctor] =>
-    -- Single constructor - use direct approach
-    mkSerializableInstanceSingle typeId ctor
-  | [ctor0, ctor1] =>
-    -- Two constructors - build directly
-    mkSerializableInstanceTwo typeId ctor0 ctor1
-  | [ctor0, ctor1, ctor2] =>
-    -- Three constructors - build directly
-    mkSerializableInstanceThree typeId ctor0 ctor1 ctor2
+    -- Single constructor case
+    mkSingleConstructorInstance ctor typeId
   | _ =>
-    throwError s!"Inductive types with {constructorInfos.length} constructors not yet supported - add more cases as needed"
+    -- Multiple constructors case
+    let mut encodeArms := #[]
+    let mut decodeArms := #[]
+
+    for ctor in constructorInfos do
+      let ctorId := mkIdent ctor.name
+      let fieldIds := (List.range ctor.numFields).map fun i => mkIdent (Name.mkSimple s!"field{i}")
+      let fieldTerms := fieldIds.map fun fieldId => ⟨fieldId⟩
+
+      -- Generate encode arm
+      if ctor.numFields = 0 then
+        encodeArms := encodeArms.push (ctorId, none, ← `(LeanSerial.SerialValue.compound $(quote ctor.name.toString) #[]))
+      else
+        let encodeElems ← fieldTerms.mapM fun fieldTerm => `(LeanSerial.encode $fieldTerm)
+        let fieldArray := fieldTerms.toArray
+        encodeArms := encodeArms.push (ctorId, some fieldArray, ← `(LeanSerial.SerialValue.compound $(quote ctor.name.toString) #[$(encodeElems.toArray),*]))
+
+      -- Generate decode statements
+      let decodeStmts ← fieldIds.mapIdxM fun i fieldId => do
+        `(doElem| let $fieldId ← LeanSerial.decode args[$(quote i)]!)
+
+      let ctorApp ← if ctor.numFields = 0 then
+        pure ⟨ctorId⟩
+      else
+        fieldTerms.foldlM (fun acc fieldTerm => `($acc $fieldTerm)) (⟨ctorId⟩ : TSyntax `term)
+
+      decodeArms := decodeArms.push (ctor.name.toString, ctor.numFields, decodeStmts.toArray, ctorApp)
+
+    -- Multiple constructors - implement general case
+    throwError s!"Multiple constructor types with {constructorInfos.length} constructors not yet fully supported"
+
 
 def mkSerializableInstanceHandler (declName : Name) : CommandElabM Bool := do
   let env ← getEnv
-  match env.find? declName with
-  | some (ConstantInfo.inductInfo _) =>
-    mkSerializableInstanceForInductive declName
+  if isStructure env declName then
+    let ctorVal := getStructureCtor env declName
+    mkSerializableInstance ctorVal declName
     return true
-  | _ =>
-    match env.find? (declName ++ `mk) with
-    | some (ConstantInfo.ctorInfo ctorVal) =>
-      mkSerializableInstance ctorVal declName
+  else
+    match env.find? declName with
+    | some (ConstantInfo.inductInfo _) =>
+      mkSerializableInstanceForInductive declName
+      -- throwError s!"Inductive types not supported yet: {declName}"
       return true
-    | _ => return false
+    | _ =>
+      -- Fallback for non-structure types that might have a 'mk' constructor
+      match env.find? (declName ++ `mk) with
+      | some (ConstantInfo.ctorInfo ctorVal) =>
+        mkSerializableInstance ctorVal declName
+        return true
+      | _ => return false
 
 initialize
   registerDerivingHandler ``LeanSerial.Serializable fun declNames => do
