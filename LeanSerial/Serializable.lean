@@ -1,4 +1,9 @@
 import Lean
+import Std.Data.HashMap
+import Std.Data.HashSet
+import Std.Data.TreeMap
+import Std.Data.TreeSet
+
 import LeanSerial.Core
 
 namespace LeanSerial
@@ -23,6 +28,7 @@ def decodeCompound (expectedName : String) (sv : SerialValue) : DecodeM (Array S
     if name == expectedName then .ok args
     else .error s!"Expected {expectedName}, got {name}"
   | other => .error s!"Expected compound {expectedName}, got {repr other}"
+
 
 -- Primitive Types: Numeric
 instance : Serializable Nat where
@@ -117,7 +123,7 @@ instance : SignedIntLike Int64 where
   ofInt := Int64.ofInt
   name := "Int64"
 
--- Primitive Types: String, Char and Tuples
+-- Primitive Types: String, Char, FilePath
 instance : Serializable String where
   encode s := .str s
   decode
@@ -125,14 +131,31 @@ instance : Serializable String where
     | other => .error s!"Expected String, got {repr other}"
 
 instance : Serializable Char where
-  encode c := .str (String.mk [c])
+  encode c := .compound "Char" #[.str (String.mk [c])]
   decode
-    | .str s =>
+    | .compound "Char" #[.str s] =>
       if s.length == 1 then
         .ok (s.get 0)
       else
         .error s!"Expected Char, got string of length {s.length}"
-    | other => .error s!"Expected Char, got {repr other}"
+    | .compound "Char" args => .error s!"Char expects 1 arg, got {args.size}"
+    | other => .error s!"Expected Char compound, got {repr other}"
+
+instance : Serializable System.FilePath where
+  encode fp := .compound "FilePath" #[.str (fp.toString)]
+  decode
+    | .compound "FilePath" #[.str s] =>
+      .ok (System.FilePath.mk s)
+    | .compound "FilePath" args => .error s!"FilePath expects 1 arg, got {args.size}"
+    | other => .error s!"Expected FilePath compound, got {repr other}"
+
+
+instance : Serializable Bool where
+  encode b := .bool b
+  decode
+    | .bool b => .ok b
+    | other => .error s!"Expected Bool, got {repr other}"
+
 
 instance {α β : Type} [Serializable α] [Serializable β] : Serializable (α × β) where
   encode
@@ -146,14 +169,28 @@ instance {α β : Type} [Serializable α] [Serializable β] : Serializable (α �
     else
       .error s!"Prod expects 2 args, got {args.size}"
 
-instance : Serializable Bool where
-  encode b := .bool b
-  decode
-    | .bool b => .ok b
-    | other => .error s!"Expected Bool, got {repr other}"
+-- Sum Types
+instance {α β : Type} [Serializable α] [Serializable β] : Serializable (Sum α β) where
+  encode
+    | Sum.inl a => .compound "Sum.inl" #[encode a]
+    | Sum.inr b => .compound "Sum.inr" #[encode b]
+  decode sv := do
+    match sv with
+    | .compound "Sum.inl" #[av] =>
+      let a ← decode av
+      .ok (Sum.inl a)
+    | .compound "Sum.inr" #[bv] =>
+      let b ← decode bv
+      .ok (Sum.inr b)
+    | .compound "Sum.inl" args =>
+      .error s!"Sum.inl expects 1 arg, got {args.size}"
+    | .compound "Sum.inr" args =>
+      .error s!"Sum.inr expects 1 arg, got {args.size}"
+    | other =>
+      .error s!"Expected Sum compound, got {repr other}"
 
---== Container Instances ==--
 
+-- Container Types
 instance [Serializable α] : Serializable (Option α) where
   encode
     | none => .compound "Option.none" #[]
@@ -179,5 +216,102 @@ instance [Serializable α] : Serializable (Array α) where
   decode sv := do
     let args ← decodeCompound "Array" sv
     args.mapM decode |>.mapError (·)
+
+instance [Serializable α] : Serializable (Subarray α) where
+  encode xs := .compound "Subarray" (xs.toArray.map encode)
+  decode sv := do
+    let args ← decodeCompound "Subarray" sv
+    let arr ← args.mapM decode |>.mapError (·)
+    .ok ⟨arr, 0, arr.size, Nat.zero_le _, Nat.le_refl _⟩
+
+instance {n : Nat} : Serializable (Fin n) where
+  encode f := .compound "Fin" #[.nat n, .nat f.val]
+  decode sv := do
+    match sv with
+    | .compound "Fin" #[.nat bound, .nat val] =>
+      if bound ≠ n then
+        .error s!"Fin bound mismatch: expected {n}, got {bound}"
+      else if h : val < n then
+        .ok ⟨val, h⟩
+      else
+        .error s!"Fin value {val} not less than bound {n}"
+    | .compound "Fin" args =>
+      .error s!"Fin expects 2 args, got {args.size}"
+    | other =>
+      .error s!"Expected Fin compound, got {repr other}"
+
+instance : Serializable ByteArray where
+  encode ba := .compound "ByteArray" (ba.data.map (fun b => .nat b.toNat))
+  decode sv := do
+    let args ← decodeCompound "ByteArray" sv
+    let bytes ← args.mapM (fun v => match v with
+      | .nat n =>
+        if n ≤ 255 then
+          .ok (UInt8.ofNat n)
+        else
+          .error s!"Byte value {n} out of range"
+      | _ => .error s!"Expected Nat, got {repr v}")
+    .ok ⟨bytes⟩
+
+
+-- HashMap, HashSet
+instance [Serializable k] [Serializable v] [BEq k] [Hashable k] : Serializable (Std.HashMap k v) where
+  encode m := .compound "HashMap" ((m.toList.map (fun ⟨k, v⟩ => .compound "Entry" #[encode k, encode v])).toArray)
+  decode sv := do
+    let args ← decodeCompound "HashMap" sv
+    let entries ← args.mapM (fun entry => match entry with
+      | .compound "Entry" #[k, v] =>
+        do
+          let key ← decode k
+          let value ← decode v
+          .ok (key, value)
+      | _ => .error s!"Expected Entry compound, got {repr entry}")
+    .ok (Std.HashMap.ofList entries.toList)
+
+instance [Serializable k] [BEq k] [Hashable k] : Serializable (Std.HashSet k) where
+  encode s := .compound "HashSet" (s.toList.map encode |>.toArray)
+  decode sv := do
+    let args ← decodeCompound "HashSet" sv
+    let elems ← args.mapM decode |>.mapError (·)
+    .ok (Std.HashSet.ofList elems.toList)
+
+
+-- Functional types
+instance : Serializable Unit where
+  encode _ := .compound "Unit" #[]
+  decode
+    | .compound "Unit" #[] => .ok ()
+    | other => .error s!"Expected Unit, got {repr other}"
+
+instance {e : Type} [Serializable e] {a : Type} [Serializable a] : Serializable (Except e a) where
+  encode
+    | .ok a => .compound "Except.ok" #[encode a]
+    | .error e => .compound "Except.error" #[encode e]
+  decode sv := do
+    match sv with
+    | .compound "Except.ok" #[av] =>
+      let a ← decode av
+      .ok (.ok a)
+    | .compound "Except.error" #[ev] =>
+      let e ← decode ev
+      .ok (.error e)
+    | .compound "Except.ok" args =>
+      .error s!"Except.ok expects 1 arg, got {args.size}"
+    | .compound "Except.error" args =>
+      .error s!"Except.error expects 1 arg, got {args.size}"
+    | other =>
+      .error s!"Expected Except compound, got {repr other}"
+
+instance {α : Type} [Serializable α] : Serializable (Unit → α) where
+  encode f := .compound "Thunk" #[encode (f ())]
+  decode sv := do
+    match sv with
+    | .compound "Thunk" #[av] =>
+      let a ← decode av
+      .ok (fun _ => a)
+    | .compound "Thunk" args =>
+      .error s!"Thunk expects 1 arg, got {args.size}"
+    | other =>
+      .error s!"Expected Thunk compound, got {repr other}"
 
 end LeanSerial
