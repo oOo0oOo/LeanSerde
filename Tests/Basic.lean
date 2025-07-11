@@ -106,7 +106,6 @@ def test_inductive : IO Unit := do
 
 
 def main : IO Unit := do
-  IO.println "Starting LeanSerial tests..."
   test_basic_types
   test_structures
   test_inductive
