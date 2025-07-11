@@ -8,6 +8,15 @@ structure TestData where
   value : Nat
   deriving Serializable, DecidableEq
 
+structure TestData2 where
+  id : Nat
+  data : TestData
+  deriving Serializable, DecidableEq
+
+structure TestData3 where
+  items : List TestData
+  items2 : Array TestData2
+  deriving Serializable, DecidableEq
 
 def test_roundtrip {α} [Serializable α] [DecidableEq α] (testName: String) (value : α) : IO Unit := do
   let bytes := serialize value
@@ -34,9 +43,15 @@ def test_basic_types : IO Unit := do
 
 def test_structures : IO Unit := do
   IO.println "Running structure tests..."
-  -- Custom structures
+
   let testData := TestData.mk "Test" 100
   test_roundtrip "Structure" testData
+
+  let testData2 := TestData2.mk 1 testData
+  test_roundtrip "Nested Structure" testData2
+
+  let testData3 := TestData3.mk [testData, TestData.mk "Another" 200] #[testData2]
+  test_roundtrip "Complex Structure" testData3
 
 
 def main : IO Unit := do
