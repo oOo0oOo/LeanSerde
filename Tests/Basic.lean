@@ -1,5 +1,8 @@
 import Std.Data.HashMap
 import Std.Data.HashSet
+import Lean.Data.Json
+import Lean.Data.Position
+import Lean.Data.RBMap
 
 import LeanSerial
 
@@ -67,6 +70,11 @@ def test_primitive_types : IO Unit := do
   test_roundtrip "Unit" ()
   test_roundtrip "Except" (Except.ok 42 : Except String Nat)
   test_roundtrip "Except Error" (Except.error "Error message" : Except String Nat)
+
+  -- Various Lean types
+  test_roundtrip "JSON" (Lean.Json.mkObj [("key", Lean.Json.str "value")])
+  test_roundtrip "JSON Complex" (Lean.Json.arr #[Lean.Json.str "value1", Lean.Json.str "value2", Lean.Json.num 42, Lean.Json.bool true, Lean.Json.null])
+  test_roundtrip "Position" (Lean.Position.mk 1 2)
 
 def test_thunk : IO Unit := do
   let thunk : Unit → Nat := fun _ => 42
@@ -161,6 +169,21 @@ def test_hashset : IO Unit := do
     else
       IO.println "Failed roundtrip HashSet: value mismatch"
 
+def test_rbmap : IO Unit := do
+  let rb1 : Lean.RBMap Nat String compare :=
+    Lean.RBMap.empty.insert 1 "one" |>.insert 2 "two" |>.insert 3 "three"
+  let bytes := serialize rb1
+  match (deserialize bytes : Except String (Lean.RBMap Nat String compare)) with
+  | .error e => IO.println s!"Failed to deserialize RBMap: {e}"
+  | .ok rb2 =>
+    let list1 := rb1.toList.toArray.qsort (fun a b => a.1 < b.1)
+    let list2 := rb2.toList.toArray.qsort (fun a b => a.1 < b.1)
+    if list1.size == list2.size &&
+       (List.range list1.size).all (fun i => list1[i]! == list2[i]!) then
+      IO.println "OK RBMap"
+    else
+      IO.println "Failed roundtrip RBMap: value mismatch"
+
 -- Test structures
 structure TestData where
   name : String
@@ -246,6 +269,7 @@ def main : IO Unit := do
   test_bytearray
   test_hashmap
   test_hashset
+  test_rbmap
   test_structures
   test_inductive
   IO.println "All tests completed."
