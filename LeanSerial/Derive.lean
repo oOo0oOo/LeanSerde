@@ -23,11 +23,20 @@ def mkSerializableInstance (ctor : ConstructorVal) (typeName : Name) : CommandEl
   let ctorTerm : TSyntax `term := ⟨ctorId⟩
   let ctorApp ← fieldTerms.foldlM (fun acc fieldTerm => `($acc $fieldTerm)) ctorTerm
 
-  let pattern ← if fieldTerms.isEmpty then
-    pure ctorTerm
+  -- Use constructor name instead of anonymous pattern for structures
+  let env ← getEnv
+  let pattern ← if isStructure env typeName then
+    if fieldTerms.isEmpty then
+      pure ⟨ctorId⟩
+    else
+      let fieldArray := fieldTerms.toArray
+      `($(ctorId) $fieldArray*)
   else
-    let fieldArray := fieldTerms.toArray
-    `(⟨$fieldArray,*⟩)
+    if fieldTerms.isEmpty then
+      pure ctorTerm
+    else
+      let fieldArray := fieldTerms.toArray
+      `(⟨$fieldArray,*⟩)
 
   let cmd ← `(
     instance : LeanSerial.Serializable $typeId where

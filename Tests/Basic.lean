@@ -14,11 +14,10 @@ def test_roundtrip {α} [Serializable α] [DecidableEq α] (testName: String) (v
       IO.println s!"Failed roundtrip {testName}: value mismatch"
 
 
--- Test basic types
-def test_basic_types : IO Unit := do
-  IO.println "Running basic type tests..."
-  test_roundtrip "String 1" "hello"
-  test_roundtrip "String 2" "Hello, Lean!"
+-- Test primitive types
+def test_primitive_types : IO Unit := do
+  IO.println "Running primitive tests..."
+  test_roundtrip "String" "Hello, Lean!"
   test_roundtrip "Nat" 42
   test_roundtrip "Bool" true
   test_roundtrip "Int" (-123)
@@ -29,7 +28,7 @@ def test_basic_types : IO Unit := do
   test_roundtrip "Nested Option" (some (some 42) : Option (Option Nat))
 
 
--- Test custom structures
+-- Test structures
 structure TestData where
   name : String
   value : Nat
@@ -39,13 +38,13 @@ structure TestData2 where
   id : Nat
   data : TestData
   flag : Bool
-  -- flag2 : Bool := false
+  flag2 : Bool := false
   deriving Serializable, DecidableEq
 
 structure TestData3 where
   items : List TestData
   items2 : Array TestData2
-  -- optionalField : Option String := none
+  optionalField : Option String := none
   deriving Serializable, DecidableEq
 
 structure TestData4 where
@@ -59,10 +58,10 @@ def test_structures : IO Unit := do
   let testData := TestData.mk "Test" 100
   test_roundtrip "Structure" testData
 
-  let testData2 := TestData2.mk 1 testData true
+  let testData2 := TestData2.mk 1 testData true false
   test_roundtrip "Nested Structure" testData2
 
-  let testData3 := TestData3.mk [testData, TestData.mk "Another" 200] #[testData2]
+  let testData3 := TestData3.mk [testData, TestData.mk "Another" 200] #[testData2] "Opt"
   test_roundtrip "Complex Structure" testData3
 
   let testData4 := TestData4.mk testData3 true
@@ -106,7 +105,7 @@ def test_inductive : IO Unit := do
 
 
 def main : IO Unit := do
-  test_basic_types
+  test_primitive_types
   test_structures
   test_inductive
   IO.println "All tests completed."
