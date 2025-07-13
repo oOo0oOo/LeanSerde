@@ -84,6 +84,32 @@ inductive TestInductive3
 | case4 : Nat → String → TestInductive3
 deriving LeanSerial.Serializable, BEq
 
+-- Recursive inductive
+inductive TestInductive4
+| case1 : Nat → TestInductive4
+| case2 : String → TestInductive4
+| case3 : Bool → TestInductive4
+| case4 : Nat → String → TestInductive4
+deriving LeanSerial.Serializable, BEq
+
+-- inductive TestInductive5
+-- | zero : TestInductive5
+-- | succ : TestInductive5 → TestInductive5
+-- | max : TestInductive5 → TestInductive5 → TestInductive5
+-- deriving LeanSerial.Serializable, BEq
+
+-- -- Mutually recursive inductive
+-- inductive TestInductive6
+-- | case1 : TestInductive5 → TestInductive6
+-- | case2 : TestInductive6 → TestInductive5 → TestInductive6
+-- deriving LeanSerial.Serializable, BEq
+
+-- inductive TestInductive7
+-- | case1 : Nat → TestInductive7
+-- | case2 : TestInductive7 → TestInductive7 → TestInductive7
+-- | case3 : TestInductive6 → TestInductive7
+-- deriving LeanSerial.Serializable, BEq
+
 
 def test_simple_inductive : IO TestResult := do
   let value := TestInductive.none

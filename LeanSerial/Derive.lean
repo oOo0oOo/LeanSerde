@@ -5,55 +5,7 @@ import LeanSerial.Serializable
 
 open Lean Elab Meta Term Command
 
-
-def mkSerializableInstance (ctor : ConstructorVal) (typeName : Name) : CommandElabM Unit := do
-  let typeId := mkIdent typeName
-  let ctorId := mkIdent ctor.name
-  let fieldCount := ctor.numFields
-
-  let fieldIds := (List.range fieldCount).map fun i => mkIdent (Name.mkSimple s!"field{i}")
-  let fieldTerms := fieldIds.map fun fieldId => ⟨fieldId⟩
-
-  let encodeElems ← fieldTerms.mapM fun fieldTerm => `(LeanSerial.encode $fieldTerm)
-  let encodeArray := encodeElems.toArray
-
-  let decodeStmts ← fieldIds.mapIdxM fun i fieldId => do
-    `(doElem| let $fieldId ← LeanSerial.decode args[$(quote i)]!)
-
-  let ctorTerm : TSyntax `term := ⟨ctorId⟩
-  let ctorApp ← fieldTerms.foldlM (fun acc fieldTerm => `($acc $fieldTerm)) ctorTerm
-
-  -- Use constructor name instead of anonymous pattern for structures
-  let env ← getEnv
-  let pattern ← if isStructure env typeName then
-    if fieldTerms.isEmpty then
-      pure ⟨ctorId⟩
-    else
-      let fieldArray := fieldTerms.toArray
-      `($(ctorId) $fieldArray*)
-  else
-    if fieldTerms.isEmpty then
-      pure ctorTerm
-    else
-      let fieldArray := fieldTerms.toArray
-      `(⟨$fieldArray,*⟩)
-
-  let cmd ← `(
-    instance : LeanSerial.Serializable $typeId where
-      encode v := match v with
-        | $pattern => LeanSerial.SerialValue.compound $(quote ctor.name.toString) #[$encodeArray,*]
-      decode sv := do
-        let args ← LeanSerial.decodeCompound $(quote ctor.name.toString) sv
-        if args.size = $(quote fieldCount) then do
-          $[$(decodeStmts.toArray):doElem]*
-          .ok $ctorApp
-        else
-          .error "Field count mismatch"
-  )
-  elabCommand cmd
-
-
-def mkSerializableInstanceForInductive (typeName : Name) : CommandElabM Unit := do
+def mkSerializableInstance (typeName : Name) : CommandElabM Unit := do
   let env ← getEnv
   let some (ConstantInfo.inductInfo inductVal) := env.find? typeName | throwError "not an inductive type"
 
@@ -66,7 +18,6 @@ def mkSerializableInstanceForInductive (typeName : Name) : CommandElabM Unit := 
   if constructorInfos.isEmpty then
     throwError "Empty inductive type"
 
-  -- Helper function to generate encode/decode data for a constructor
   let mkConstructorData (ctor : ConstructorVal) : CommandElabM (TSyntax `term × Array (TSyntax `term) × String × TSyntax `term × Array (TSyntax `doElem)) := do
     let ctorId := mkIdent ctor.name
     let fieldIds := (List.range ctor.numFields).map fun i => mkIdent (Name.mkSimple s!"field{i}")
@@ -78,11 +29,18 @@ def mkSerializableInstanceForInductive (typeName : Name) : CommandElabM Unit := 
 
     let ctorApp ← fieldTerms.foldlM (fun acc fieldTerm => `($acc $fieldTerm)) (⟨ctorId⟩ : TSyntax `term)
 
-    let encodePattern ← if ctor.numFields = 0 then
-      pure ⟨ctorId⟩
+    let encodePattern ← if isStructure env typeName then
+      if ctor.numFields = 0 then
+        pure ⟨ctorId⟩
+      else
+        let fieldArray := fieldTerms.toArray
+        `($(ctorId) $fieldArray*)
     else
-      let fieldArray := fieldTerms.toArray
-      `($(ctorId) $fieldArray*)
+      if ctor.numFields = 0 then
+        pure ⟨ctorId⟩
+      else
+        let fieldArray := fieldTerms.toArray
+        `($(ctorId) $fieldArray*)
 
     return (encodePattern, encodeElems.toArray, ctor.name.toString, ctorApp, decodeStmts.toArray)
 
@@ -117,26 +75,21 @@ def mkSerializableInstanceForInductive (typeName : Name) : CommandElabM Unit := 
         | _ => .error "Unknown constructor")
   elabCommand cmd
 
-
 def mkSerializableInstanceHandler (declName : Name) : CommandElabM Bool := do
   let env ← getEnv
-  if isStructure env declName then
-    let ctorVal := getStructureCtor env declName
-    mkSerializableInstance ctorVal declName
+  match env.find? declName with
+  | some (ConstantInfo.inductInfo _) =>
+    mkSerializableInstance declName
     return true
-  else
-    match env.find? declName with
-    | some (ConstantInfo.inductInfo _) =>
-      mkSerializableInstanceForInductive declName
-      return true
-    | _ =>
-      -- Fallback for non-structure types that might have a 'mk' constructor
-      match env.find? (declName ++ `mk) with
-      | some (ConstantInfo.ctorInfo ctorVal) =>
-        mkSerializableInstance ctorVal declName
+  | _ =>
+    match env.find? (declName ++ `mk) with
+    | some (ConstantInfo.ctorInfo __) =>
+      match env.find? declName with
+      | some (ConstantInfo.inductInfo _) =>
+        mkSerializableInstance declName
         return true
       | _ => return false
-
+    | _ => return false
 
 initialize
   registerDerivingHandler ``LeanSerial.Serializable fun declNames => do

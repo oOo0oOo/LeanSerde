@@ -16,13 +16,6 @@ def TestResult.success (name : String) : TestResult :=
 def TestResult.failure (name : String) (error : String) : TestResult :=
   { name := name, passed := false, error := some error }
 
--- Add BEq for various types to support equality checks in tests
-instance [BEq ε] [BEq α] : BEq (Except ε α) where
-  beq
-    | .ok a, .ok b => a == b
-    | .error e1, .error e2 => e1 == e2
-    | _, _ => false
-
 def test_roundtrip {α} [Serializable α] [BEq α] (testName: String) (value : α) : IO TestResult := do
   try
     -- Test ByteArray format

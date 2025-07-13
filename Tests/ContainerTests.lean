@@ -5,6 +5,12 @@ open TestFramework
 
 namespace ContainerTests
 
+-- Add BEq to support equality checks in tests
+instance [BEq ε] [BEq α] : BEq (Except ε α) where
+  beq
+    | .ok a, .ok b => a == b
+    | .error e1, .error e2 => e1 == e2
+    | _, _ => false
 
 def test_bytearray_impl : IO TestResult := do
   let ba1 := ByteArray.mk #[1, 2, 3]

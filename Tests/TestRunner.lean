@@ -25,7 +25,8 @@ def main : IO Unit := do
     runTestSuite "Primitive Types" PrimitiveTests.run,
     runTestSuite "Time Types" TimeTests.run,
     runTestSuite "Container Types" ContainerTests.run,
-    runTestSuite "Structure Tests" StructureTests.run,
+    runTestSuite "Structures" StructureTests.run,
+    runTestSuite "Inductive Structures" InductiveTests.run,
     runTestSuite "Library Types" LibraryTests.run
   ].mapM id
 
