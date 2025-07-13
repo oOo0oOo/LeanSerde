@@ -1,9 +1,13 @@
 name = "LeanSerial"
 version = "0.1.0"
 defaultTargets = ["leanserial"]
+testDriver = "tests"
 
 [[lean_lib]]
 name = "LeanSerial"
+
+[[lean_lib]]
+name = "Tests"
 
 [[lean_exe]]
 name = "leanserial"
@@ -11,4 +15,4 @@ root = "Main"
 
 [[lean_exe]]
 name = "tests"
-root = "Tests.Basic"
+root = "Tests.TestRunner"
