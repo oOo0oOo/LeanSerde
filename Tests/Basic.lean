@@ -3,6 +3,8 @@ import Std.Data.HashSet
 import Lean.Data.Json
 import Lean.Data.Position
 import Lean.Data.RBMap
+import Std.Time
+import Std.Tactic
 
 import LeanSerial
 
@@ -31,7 +33,7 @@ def test_roundtrip {α} [Serializable α] [BEq α] (testName: String) (value : �
 -- Test primitive types
 def test_primitive_types : IO Unit := do
   IO.println ""
-  IO.println "Running primitive tests..."
+  IO.println "Running primitive type tests..."
 
   -- Numeric Types
   test_roundtrip "Nat" 42
@@ -58,23 +60,9 @@ def test_primitive_types : IO Unit := do
   test_roundtrip "Char" 'A'
   test_roundtrip "FilePath Unix" ("/usr/bin/lean" : System.FilePath)
   test_roundtrip "FilePath Windows" ("C:\\Program Files\\Lean\\lean.exe" : System.FilePath)
-
-  -- Boolean and Option
   test_roundtrip "Bool" true
   test_roundtrip "Bool False" false
-  test_roundtrip "Option Some" (some 42)
-  test_roundtrip "Option None" (none : Option Nat)
-  test_roundtrip "Nested Option" (some (some 42) : Option (Option Nat))
-
-  -- Various Functional Types
   test_roundtrip "Unit" ()
-  test_roundtrip "Except" (Except.ok 42 : Except String Nat)
-  test_roundtrip "Except Error" (Except.error "Error message" : Except String Nat)
-
-  -- Various Lean types
-  test_roundtrip "JSON" (Lean.Json.mkObj [("key", Lean.Json.str "value")])
-  test_roundtrip "JSON Complex" (Lean.Json.arr #[Lean.Json.str "value1", Lean.Json.str "value2", Lean.Json.num 42, Lean.Json.bool true, Lean.Json.null])
-  test_roundtrip "Position" (Lean.Position.mk 1 2)
 
 def test_thunk : IO Unit := do
   let thunk : Unit → Nat := fun _ => 42
@@ -88,9 +76,114 @@ def test_thunk : IO Unit := do
       IO.println "Failed roundtrip Thunk: value mismatch"
 
 
+def test_time_types : IO Unit := do
+  IO.println ""
+  IO.println "Running time type tests..."
+
+  -- Units: Era, Year, Month, Week, Weekday, Day, Hour, Minute, Second, Millisecond, Nanosecond
+  test_roundtrip "Year" (Std.Time.Year.Offset.ofInt 2023)
+  test_roundtrip "Month" (Std.Time.Month.Ordinal.ofNat 5)
+  test_roundtrip "Week" (Std.Time.Week.Ordinal.ofNat 2)
+  test_roundtrip "Weekday" (Std.Time.Weekday.ofNat 3)
+  test_roundtrip "Day" (Std.Time.Day.Ordinal.ofNat 15)
+  test_roundtrip "Hour" (Std.Time.Hour.Ordinal.ofNat 10 (by decide))
+  test_roundtrip "Minute" (Std.Time.Minute.Ordinal.ofNat 30 (by decide))
+  test_roundtrip "Second" (Std.Time.Second.Ordinal.ofNat (leap := false) 45 (by decide))
+  test_roundtrip "Second Leap" (Std.Time.Second.Ordinal.ofNat (leap := true) 60 (by decide))
+  test_roundtrip "Millisecond" (Std.Time.Millisecond.Ordinal.ofNat 500 (by decide))
+  test_roundtrip "Nanosecond" (Std.Time.Nanosecond.Ordinal.ofNat 999_999_999 (by decide))
+
+  test_roundtrip "Timestamp" (Std.Time.Timestamp.ofSecondsSinceUnixEpoch ⟨2000000000⟩)
+
+  -- PlainDate, PlainDateTime, PlainTime
+  test_roundtrip "PlainDate" (Std.Time.PlainDate.ofYearMonthDay?  2023 5 15)
+  test_roundtrip "PlainTime" (Std.Time.PlainTime.ofHourMinuteSeconds 10 30 45)
+  let dateTime := Std.Time.PlainDate.ofYearMonthDay? 2023 5 15
+  match dateTime with
+  | none => IO.println "Failed to create PlainDate"
+  | some date =>
+    test_roundtrip "PlainDateTime" (Std.Time.PlainDateTime.mk date (Std.Time.PlainTime.ofHourMinuteSeconds 10 30 45))
+
+  -- TimeZone etc
+  test_roundtrip "TimeZone" (Std.Time.TimeZone.mk ⟨0⟩ "UTC" "UTC" false)
+
+def test_zone_rules : IO Unit := do
+  -- Test UTC timezone rules
+  let utcRules := Std.Time.TimeZone.ZoneRules.ofTimeZone (Std.Time.TimeZone.mk ⟨0⟩ "UTC" "UTC" false)
+  let bytes := serialize utcRules
+  match (deserialize bytes : Except String (Std.Time.TimeZone.ZoneRules)) with
+  | .error e => IO.println s!"Failed to deserialize ZoneRules UTC: {e}"
+  | .ok deserialized =>
+    -- Test multiple properties for comprehensive validation
+    let originalLtt := utcRules.initialLocalTimeType
+    let deserializedLtt := deserialized.initialLocalTimeType
+    if originalLtt.gmtOffset.second.val == deserializedLtt.gmtOffset.second.val &&
+       originalLtt.isDst == deserializedLtt.isDst &&
+       originalLtt.abbreviation == deserializedLtt.abbreviation &&
+       originalLtt.identifier == deserializedLtt.identifier &&
+       utcRules.transitions.size == deserialized.transitions.size then
+      IO.println "OK ZoneRules UTC"
+    else
+      IO.println "Failed roundtrip ZoneRules UTC: value mismatch"
+
+  -- Test timezone with positive offset (EST)
+  let estRules := Std.Time.TimeZone.ZoneRules.ofTimeZone (Std.Time.TimeZone.mk ⟨-18000⟩ "EST" "EST" false)
+  let bytesEst := serialize estRules
+  match (deserialize bytesEst : Except String (Std.Time.TimeZone.ZoneRules)) with
+  | .error e => IO.println s!"Failed to deserialize ZoneRules EST: {e}"
+  | .ok deserializedEst =>
+    let originalLtt := estRules.initialLocalTimeType
+    let deserializedLtt := deserializedEst.initialLocalTimeType
+    if originalLtt.gmtOffset.second.val == deserializedLtt.gmtOffset.second.val &&
+       originalLtt.isDst == deserializedLtt.isDst &&
+       originalLtt.abbreviation == deserializedLtt.abbreviation &&
+       originalLtt.identifier == deserializedLtt.identifier &&
+       estRules.transitions.size == deserializedEst.transitions.size then
+      IO.println "OK ZoneRules EST"
+    else
+      IO.println "Failed roundtrip ZoneRules EST: value mismatch"
+
+  -- Test timezone with DST
+  let dstRules := Std.Time.TimeZone.ZoneRules.ofTimeZone (Std.Time.TimeZone.mk ⟨3600⟩ "CET" "CEST" true)
+  let bytesDst := serialize dstRules
+  match (deserialize bytesDst : Except String (Std.Time.TimeZone.ZoneRules)) with
+  | .error e => IO.println s!"Failed to deserialize ZoneRules DST: {e}"
+  | .ok deserializedDst =>
+    let originalLtt := dstRules.initialLocalTimeType
+    let deserializedLtt := deserializedDst.initialLocalTimeType
+    if originalLtt.gmtOffset.second.val == deserializedLtt.gmtOffset.second.val &&
+       originalLtt.isDst == deserializedLtt.isDst &&
+       originalLtt.abbreviation == deserializedLtt.abbreviation &&
+       originalLtt.identifier == deserializedLtt.identifier &&
+       dstRules.transitions.size == deserializedDst.transitions.size then
+      IO.println "OK ZoneRules DST"
+    else
+      IO.println "Failed roundtrip ZoneRules DST: value mismatch"
+
+def test_zoned_datetime : IO Unit := do
+  let utcZone := Std.Time.TimeZone.mk ⟨0⟩ "UTC" "UTC" false
+  let zonedDateTime := Std.Time.ZonedDateTime.ofTimestampWithZone
+    (Std.Time.Timestamp.ofSecondsSinceUnixEpoch ⟨2000000000⟩) utcZone
+  let bytes := serialize zonedDateTime
+  match (deserialize bytes : Except String Std.Time.ZonedDateTime) with
+  | .error e => IO.println s!"Failed to deserialize ZonedDateTime: {e}"
+  | .ok deserialized =>
+    if deserialized.timestamp == zonedDateTime.timestamp &&
+       deserialized.timezone == zonedDateTime.timezone then
+      IO.println "OK ZonedDateTime"
+    else
+      IO.println "Failed roundtrip ZonedDateTime: value mismatch"
+
 def test_container_types : IO Unit := do
   IO.println ""
   IO.println "Running container type tests..."
+
+  test_roundtrip "Option Some" (some 42)
+  test_roundtrip "Option None" (none : Option Nat)
+  test_roundtrip "Nested Option" (some (some 42) : Option (Option Nat))
+  test_roundtrip "Except" (Except.ok 42 : Except String Nat)
+  test_roundtrip "Except Error" (Except.error "Error message" : Except String Nat)
+
   -- Tuples
   test_roundtrip "Prod" (42, "Test")
   test_roundtrip "Prod 2" ('B', 3.12)
@@ -101,12 +194,17 @@ def test_container_types : IO Unit := do
   test_roundtrip "Sum Right" (Sum.inr "Hello" : Sum Nat String)
   test_roundtrip "Sum Nested" (Sum.inl (Sum.inr "Nested") : Sum (Sum Nat String) String)
 
-  -- Container Types
+  -- Lists, Arrays, Fin
   test_roundtrip "List" ([1, 2, 3] : List Nat)
   test_roundtrip "Nested List" ([[2,3], [4,5,6],[7],[8,9,10]] : List (List Nat))
   test_roundtrip "Array" (#[4, 5, 6] : Array Nat)
   test_roundtrip "Fin 3" (Fin.ofNat (n := 3) 2)
   test_roundtrip "Fin 100" (Fin.ofNat (n := 100) 99)
+
+  -- Various
+  test_roundtrip "JSON" (Lean.Json.mkObj [("key", Lean.Json.str "value")])
+  test_roundtrip "JSON Complex" (Lean.Json.arr #[Lean.Json.str "value1", Lean.Json.str "value2", Lean.Json.num 42, Lean.Json.bool true, Lean.Json.null])
+  test_roundtrip "Position" (Lean.Position.mk 1 2)
 
 def test_subarray : IO Unit := do
   let arr := #[1, 2, 3, 4, 5]
@@ -264,6 +362,9 @@ def test_inductive : IO Unit := do
 def main : IO Unit := do
   test_primitive_types
   test_thunk
+  test_time_types
+  test_zone_rules
+  test_zoned_datetime
   test_container_types
   test_subarray
   test_bytearray
