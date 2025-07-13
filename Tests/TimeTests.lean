@@ -8,7 +8,7 @@ namespace TimeTests
 
 def test_utc_zone_rules : IO TestResult := do
   let utcRules := Std.Time.TimeZone.ZoneRules.ofTimeZone (Std.Time.TimeZone.mk ⟨0⟩ "UTC" "UTC" false)
-  let bytes := LeanSerial.serialize utcRules
+  let bytes: ByteArray := LeanSerial.serialize utcRules
   match (LeanSerial.deserialize bytes : Except String (Std.Time.TimeZone.ZoneRules)) with
   | .error e => return TestResult.failure "ZoneRules UTC" s!"Failed to deserialize: {e}"
   | .ok deserialized =>
@@ -25,7 +25,7 @@ def test_utc_zone_rules : IO TestResult := do
 
 def test_est_zone_rules : IO TestResult := do
   let estRules := Std.Time.TimeZone.ZoneRules.ofTimeZone (Std.Time.TimeZone.mk ⟨-18000⟩ "EST" "EST" false)
-  let bytes := LeanSerial.serialize estRules
+  let bytes: ByteArray := LeanSerial.serialize estRules
   match (LeanSerial.deserialize bytes : Except String (Std.Time.TimeZone.ZoneRules)) with
   | .error e => return TestResult.failure "ZoneRules EST" s!"Failed to deserialize: {e}"
   | .ok deserialized =>
@@ -42,7 +42,7 @@ def test_est_zone_rules : IO TestResult := do
 
 def test_dst_zone_rules : IO TestResult := do
   let dstRules := Std.Time.TimeZone.ZoneRules.ofTimeZone (Std.Time.TimeZone.mk ⟨3600⟩ "CET" "CEST" true)
-  let bytes := LeanSerial.serialize dstRules
+  let bytes: ByteArray := LeanSerial.serialize dstRules
   match (LeanSerial.deserialize bytes : Except String (Std.Time.TimeZone.ZoneRules)) with
   | .error e => return TestResult.failure "ZoneRules DST" s!"Failed to deserialize: {e}"
   | .ok deserialized =>
@@ -61,7 +61,7 @@ def test_zoned_datetime_impl : IO TestResult := do
   let utcZone := Std.Time.TimeZone.mk ⟨0⟩ "UTC" "UTC" false
   let zonedDateTime := Std.Time.ZonedDateTime.ofTimestampWithZone
     (Std.Time.Timestamp.ofSecondsSinceUnixEpoch ⟨2000000000⟩) utcZone
-  let bytes := LeanSerial.serialize zonedDateTime
+  let bytes: ByteArray := LeanSerial.serialize zonedDateTime
   match (LeanSerial.deserialize bytes : Except String Std.Time.ZonedDateTime) with
   | .error e => return TestResult.failure "ZonedDateTime" s!"Failed to deserialize: {e}"
   | .ok deserialized =>

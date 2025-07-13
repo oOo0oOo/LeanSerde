@@ -2,6 +2,12 @@ import Lean.Data.Json
 
 namespace LeanSerial
 
+inductive SerializationFormat where
+  | ByteArray
+  | Json
+  | String
+  deriving Repr, BEq, Inhabited
+
 inductive SerialValue where
   | str : String → SerialValue
   | nat : Nat → SerialValue
@@ -65,14 +71,28 @@ instance : Lean.FromJson (Array SerialValue) where
 
 end SerialValue
 
-def serializeValue (sv : SerialValue) : ByteArray :=
-  (Lean.toJson sv).compress.toUTF8
+class SerializableFormat (α : Type) where
+  serializeValue : SerialValue → α
+  deserializeValue : α → Except String SerialValue
 
-def deserializeValue (bytes : ByteArray) : Except String SerialValue := do
-  let s ← match String.fromUTF8? bytes with
-    | some str => pure str
-    | none     => throw "Invalid UTF-8 in serialized data"
-  let json ← Lean.Json.parse s
-  Lean.fromJson? json
+instance : SerializableFormat ByteArray where
+  serializeValue sv := (Lean.toJson sv).compress.toUTF8
+  deserializeValue bytes := do
+    let s ← match String.fromUTF8? bytes with
+      | some str => pure str
+      | none     => throw "Invalid UTF-8 in serialized data"
+    let json ← Lean.Json.parse s
+    Lean.fromJson? json
+
+instance : SerializableFormat Lean.Json where
+  serializeValue sv := Lean.toJson sv
+  deserializeValue json := Lean.fromJson? json
+
+instance : SerializableFormat String where
+  serializeValue sv := (Lean.toJson sv).pretty
+  deserializeValue str := do
+    let json ← Lean.Json.parse str
+    Lean.fromJson? json
+
 
 end LeanSerial

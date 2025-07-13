@@ -8,7 +8,7 @@ namespace ContainerTests
 
 def test_bytearray_impl : IO TestResult := do
   let ba1 := ByteArray.mk #[1, 2, 3]
-  let bytes := LeanSerial.serialize ba1
+  let bytes: ByteArray := LeanSerial.serialize ba1
   match (LeanSerial.deserialize bytes : Except String ByteArray) with
   | .error e => return TestResult.failure "ByteArray" s!"Failed to deserialize: {e}"
   | .ok ba2 =>
@@ -19,7 +19,7 @@ def test_bytearray_impl : IO TestResult := do
 
 def test_bytearray_empty_impl : IO TestResult := do
   let empty := ByteArray.mk #[]
-  let bytes := LeanSerial.serialize empty
+  let bytes: ByteArray := LeanSerial.serialize empty
   match (LeanSerial.deserialize bytes : Except String ByteArray) with
   | .error e => return TestResult.failure "ByteArray Empty" s!"Failed to deserialize: {e}"
   | .ok ba =>
@@ -31,7 +31,7 @@ def test_bytearray_empty_impl : IO TestResult := do
 def test_subarray_impl : IO TestResult := do
   let arr := #[1, 2, 3, 4, 5]
   let sub := arr.toSubarray
-  let bytes := LeanSerial.serialize sub
+  let bytes: ByteArray := LeanSerial.serialize sub
   match (LeanSerial.deserialize bytes : Except String (Subarray Nat)) with
   | .error e => return TestResult.failure "Subarray" s!"Failed to deserialize: {e}"
   | .ok deserialized =>

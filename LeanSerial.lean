@@ -3,11 +3,10 @@ import LeanSerial.Serializable
 
 namespace LeanSerial
 
--- User-facing API for serialization and deserialization
-def serialize {α} [Serializable α] (value : α) : ByteArray :=
-  serializeValue (encode value)
+def serialize {α β} [Serializable α] [SerializableFormat β] (value : α) : β :=
+  SerializableFormat.serializeValue (encode value)
 
-def deserialize {α} [Serializable α] (bytes : ByteArray) : Except String α :=
-  deserializeValue bytes >>= decode
+def deserialize {α β} [Serializable α] [SerializableFormat β] (data : β) : Except String α :=
+  SerializableFormat.deserializeValue data >>= decode
 
 end LeanSerial

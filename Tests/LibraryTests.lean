@@ -12,7 +12,7 @@ namespace LibraryTests
 
 def test_hashmap_impl : IO TestResult := do
   let hm1 := Std.HashMap.ofList [(1, "one"), (2, "two"), (3, "three")]
-  let bytes := LeanSerial.serialize hm1
+  let bytes: ByteArray := LeanSerial.serialize hm1
   match (LeanSerial.deserialize bytes : Except String (Std.HashMap Nat String)) with
   | .error e => return TestResult.failure "HashMap" s!"Failed to deserialize: {e}"
   | .ok hm2 =>
@@ -33,7 +33,7 @@ def test_hashmap : IO Unit := do
 
 def test_hashset_impl : IO TestResult := do
   let hs1 := Std.HashSet.ofList [1, 2, 3]
-  let bytes := LeanSerial.serialize hs1
+  let bytes: ByteArray := LeanSerial.serialize hs1
   match (LeanSerial.deserialize bytes : Except String (Std.HashSet Nat)) with
   | .error e => return TestResult.failure "HashSet" s!"Failed to deserialize: {e}"
   | .ok hs2 =>
@@ -55,7 +55,7 @@ def test_hashset : IO Unit := do
 def test_rbmap_impl : IO TestResult := do
   let rb1 : Lean.RBMap Nat String compare :=
     Lean.RBMap.empty.insert 1 "one" |>.insert 2 "two" |>.insert 3 "three"
-  let bytes := LeanSerial.serialize rb1
+  let bytes: ByteArray := LeanSerial.serialize rb1
   match (LeanSerial.deserialize bytes : Except String (Lean.RBMap Nat String compare)) with
   | .error e => return TestResult.failure "RBMap" s!"Failed to deserialize: {e}"
   | .ok rb2 =>
