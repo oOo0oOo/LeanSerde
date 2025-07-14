@@ -3,9 +3,7 @@ import Lean.Data.Json
 namespace LeanSerial
 
 inductive SerializationFormat where
-  | ByteArray
-  | Json
-  | String
+  | ByteArray | Json | String
   deriving Repr, BEq, Inhabited
 
 inductive SerialValue where
@@ -17,22 +15,14 @@ inductive SerialValue where
 
 namespace SerialValue
 
-def toJsonImpl : SerialValue → Lean.Json
-  | str s    => Lean.Json.str s
-  | nat n    => Lean.Json.num n
-  | bool b   => Lean.Json.bool b
-  | compound name children =>
-    Lean.Json.mkObj [("type", Lean.Json.str name), ("args", Lean.Json.arr (children.map toJsonImpl))]
+def toJson : SerialValue → Lean.Json
+  | .str s => .str s
+  | .nat n => .num n
+  | .bool b => .bool b
+  | .compound name children =>
+    .mkObj [("type", .str name), ("args", .arr (children.map toJson))]
 
-mutual
-
-partial def fromJsonArrayImpl : Lean.Json → Except String (Array SerialValue)
-  | Lean.Json.arr arr => do
-    let values ← arr.mapM fromJsonImpl
-    pure values
-  | _ => throw "Expected JSON array"
-
-partial def fromJsonImpl : Lean.Json → Except String SerialValue
+partial def fromJson : Lean.Json → Except String SerialValue
   | Lean.Json.str s => pure (SerialValue.str s)
   | Lean.Json.num n =>
     match n.mantissa, n.exponent with
@@ -51,23 +41,14 @@ partial def fromJsonImpl : Lean.Json → Except String SerialValue
       | some (_, argsJson) => pure argsJson
       | none => throw "Missing 'args' field in compound object"
 
-    let args ← fromJsonArrayImpl argsJson
+    let args ← match argsJson with
+      | Lean.Json.arr arr => arr.mapM fromJson
+      | _ => throw "Expected JSON array"
     pure (SerialValue.compound typeName args)
   | _ => throw "Invalid JSON structure for SerialValue."
 
-end
-
-instance : Lean.ToJson SerialValue where
-  toJson := toJsonImpl
-
-instance : Lean.ToJson (Array SerialValue) where
-  toJson arr := Lean.Json.arr (arr.map toJsonImpl)
-
-instance : Lean.FromJson SerialValue where
-  fromJson? := fromJsonImpl
-
-instance : Lean.FromJson (Array SerialValue) where
-  fromJson? := fromJsonArrayImpl
+instance : Lean.ToJson SerialValue := ⟨toJson⟩
+instance : Lean.FromJson SerialValue := ⟨fromJson⟩
 
 end SerialValue
 
