@@ -7,15 +7,17 @@ open Lean Elab Meta Term Command
 
 private def mkFieldName (i : Nat) : Name := Name.mkSimple s!"field{i}"
 
+private def mkAuxFunctionName (name: String) (typeId : TSyntax `ident) : Ident :=
+  mkIdent (Name.mkSimple s!"{name}_impl_{typeId}")
+
 private def mkConstructorData (typeId : TSyntax `ident) (inductVal : InductiveVal) (ctor : ConstructorVal) : CommandElabM (TSyntax `term × List (TSyntax `term) × String × TSyntax `term × List (TSyntax `doElem)) := do
   let ctorId := mkIdent ctor.name
   let fieldIds := (List.range ctor.numFields).map (mkIdent ∘ mkFieldName)
   let fieldTerms := fieldIds.map fun fieldId => ⟨fieldId⟩
 
-  let encodeFnName := mkIdent (Name.mkSimple s!"encode_impl_{typeId}")
-  let decodeFnName := mkIdent (Name.mkSimple s!"decode_impl_{typeId}")
+  let encodeFnName := mkAuxFunctionName "encode" typeId
+  let decodeFnName := mkAuxFunctionName "decode" typeId
 
-  -- Get field types for recursive detection
   let ctorInfo ← getConstInfoCtor ctor.name
   let fieldTypes ← liftTermElabM do
     forallTelescopeReducing ctorInfo.type fun xs _ => do
@@ -26,14 +28,12 @@ private def mkConstructorData (typeId : TSyntax `ident) (inductVal : InductiveVa
         types := types.push localDecl.type
       return types.toList
 
-  -- Generate encode calls - use our function for recursive fields, typeclass for others
   let encodeElems ← fieldTerms.zip fieldTypes |>.mapM fun (fieldTerm, fieldType) => do
     if fieldType.isAppOf inductVal.name then
       `($encodeFnName:ident $fieldTerm)
     else
       `(LeanSerial.encode $fieldTerm)
 
-  -- Generate decode calls - use our function for recursive fields, typeclass for others
   let decodeStmts ← fieldIds.zip fieldTypes |>.mapIdxM fun i (fieldId, fieldType) => do
     if fieldType.isAppOf inductVal.name then
       `(doElem| let $fieldId ← $decodeFnName:ident args[$(quote i)]!)
@@ -70,10 +70,9 @@ private def mkSerializableQuotation (typeId : TSyntax `ident) (constructorData :
   let decodePatterns ← constructorData.mapM fun (_, _, name, _, _) => `($(quote name))
   let encodePatterns := constructorData.map (·.1)
 
-  let encodeFnName := mkIdent (Name.mkSimple s!"encode_impl_{typeId}")
-  let decodeFnName := mkIdent (Name.mkSimple s!"decode_impl_{typeId}")
+  let encodeFnName := mkAuxFunctionName "encode" typeId
+  let decodeFnName := mkAuxFunctionName "decode" typeId
 
-  -- Use partial def for recursive types, regular def for non-recursive
   let encodeDef ← if isRecursive then
     `(partial def $encodeFnName (v : $typeId) : LeanSerial.SerialValue :=
         match v with
@@ -104,12 +103,13 @@ private def mkSerializableQuotation (typeId : TSyntax `ident) (constructorData :
 
 def mkSerializableInstance (typeName : Name) : CommandElabM Unit := do
   let env ← getEnv
-  let some (ConstantInfo.inductInfo inductVal) := env.find? typeName | throwError "not an inductive type"
+  let some (ConstantInfo.inductInfo inductVal) := env.find? typeName
+    | throwError "not an inductive type"
 
   let typeId := mkIdent typeName
-
   let constructorInfos ← inductVal.ctors.mapM fun ctorName => do
-    let some (ConstantInfo.ctorInfo ctorVal) := env.find? ctorName | throwError s!"constructor {ctorName} not found"
+    let some (ConstantInfo.ctorInfo ctorVal) := env.find? ctorName
+      | throwError s!"constructor {ctorName} not found"
     return ctorVal
 
   if constructorInfos.isEmpty then
@@ -118,9 +118,7 @@ def mkSerializableInstance (typeName : Name) : CommandElabM Unit := do
   let constructorData ← constructorInfos.mapM (mkConstructorData typeId inductVal)
   let cmds ← mkSerializableQuotation typeId constructorData constructorInfos inductVal.isRec
 
-  -- Execute commands in sequence
-  for cmd in cmds do
-    elabCommand cmd
+  cmds.forM elabCommand
 
 def mkSerializableInstanceHandler (declName : Name) : CommandElabM Bool := do
   let env ← getEnv
