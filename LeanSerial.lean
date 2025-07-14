@@ -1,5 +1,10 @@
+import LeanSerial.Core
 import LeanSerial.Derive
-import LeanSerial.Serializable
+import LeanSerial.PrimitiveTypes
+import LeanSerial.ContainerTypes
+import LeanSerial.LibraryTypes
+import LeanSerial.TimeTypes
+import LeanSerial.MetaTypes
 
 namespace LeanSerial
 

@@ -75,5 +75,20 @@ instance : SerializableFormat String where
     let json ← Lean.Json.parse str
     Lean.fromJson? json
 
+-- Serialized class
+abbrev DecodeM := Except String
+
+class Serializable (α : Type) where
+  encode : α → SerialValue
+  decode : SerialValue → DecodeM α
+
+export Serializable (encode decode)
+
+def decodeCompound (expectedName : String) (sv : SerialValue) : DecodeM (Array SerialValue) :=
+  match sv with
+  | .compound name args =>
+    if name == expectedName then .ok args
+    else .error s!"Expected {expectedName}, got {name}"
+  | other => .error s!"Expected compound {expectedName}, got {repr other}"
 
 end LeanSerial

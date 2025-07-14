@@ -3,6 +3,7 @@ import Tests.TimeTests
 import Tests.ContainerTests
 import Tests.StructureTests
 import Tests.LibraryTests
+import Tests.MetaTests
 
 open LeanSerial
 
@@ -27,7 +28,8 @@ def main : IO Unit := do
     runTestSuite "Container Types" ContainerTests.run,
     runTestSuite "Structures" StructureTests.run,
     runTestSuite "Inductive Structures" InductiveTests.run,
-    runTestSuite "Library Types" LibraryTests.run
+    runTestSuite "Library Types" LibraryTests.run,
+    runTestSuite "Meta Types" MetaTests.run
   ].mapM id
 
   let totalTests := results.length

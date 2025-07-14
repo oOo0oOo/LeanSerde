@@ -2,22 +2,6 @@ import LeanSerial.Core
 
 namespace LeanSerial
 
-/-- Monadic error handling for cleaner decode operations -/
-abbrev DecodeM := Except String
-
-class Serializable (α : Type) where
-  encode : α → SerialValue
-  decode : SerialValue → DecodeM α
-
-export Serializable (encode decode)
-
-def decodeCompound (expectedName : String) (sv : SerialValue) : DecodeM (Array SerialValue) :=
-  match sv with
-  | .compound name args =>
-    if name == expectedName then .ok args
-    else .error s!"Expected {expectedName}, got {name}"
-  | other => .error s!"Expected compound {expectedName}, got {repr other}"
-
 -- Primitive Types: Numeric
 instance : Serializable Nat where
   encode n := .nat n
@@ -117,6 +101,29 @@ instance : Serializable String where
   decode
     | .str s => .ok s
     | other => .error s!"Expected String, got {repr other}"
+
+instance : LeanSerial.Serializable String.Pos where
+  encode pos := .compound "StringPos" #[.nat pos.byteIdx]
+  decode sv := do
+    match sv with
+    | .compound "StringPos" #[.nat idx] => .ok { byteIdx := idx }
+    | .compound "StringPos" args => .error s!"StringPos expects 1 arg, got {args.size}"
+    | other => .error s!"Expected StringPos compound, got {repr other}"
+
+instance : Serializable Substring where
+  encode sub := .compound "Substring" #[encode sub.str, encode sub.startPos, encode sub.stopPos]
+  decode sv := do
+    match sv with
+    | .compound "Substring" #[str, startPos, stopPos] =>
+      let str ← decode str
+      let startPos ← decode startPos
+      let stopPos ← decode stopPos
+      if startPos.byteIdx < 0 || stopPos.byteIdx < 0 || stopPos.byteIdx < startPos.byteIdx || stopPos.byteIdx > str.length then
+        .error s!"Invalid Substring: start {startPos.byteIdx}, stop {stopPos.byteIdx}, length {str.length}"
+      else
+        .ok { str := str, startPos := startPos, stopPos := stopPos }
+    | .compound "Substring" args => .error s!"Substring expects 3 args, got {args.size}"
+    | other => .error s!"Expected Substring compound, got {repr other}"
 
 instance : Serializable Char where
   encode c := .compound "Char" #[.str (String.mk [c])]

@@ -1,4 +1,4 @@
-import LeanSerial.PrimitiveTypes
+import LeanSerial.Core
 
 namespace LeanSerial
 

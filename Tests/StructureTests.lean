@@ -99,9 +99,8 @@ inductive TestInductive7
 | case1 : Nat → TestInductive7
 | case2 : TestInductive7 → TestInductive7 → TestInductive7
 | case3 : TestInductive6 → TestInductive7
-| case4 : TestInductive7 → TestInductive6 → TestInductive5 → TestInductive7
+| case4 : TestInductive7 → List TestInductive6 → TestInductive5 → TestInductive7
 deriving LeanSerial.Serializable, BEq
-
 
 def test_simple_inductive : IO TestResult := do
   let value := TestInductive.none
@@ -131,7 +130,7 @@ def test_recursive_inductive2 : IO TestResult := do
   let value5 := TestInductive5.zero (TestInductive5.leaf)
   let value6 := TestInductive6.case1 value5
   let value7 := TestInductive7.case3 value6
-  let value8 := TestInductive7.case4 value7 value6 value5
+  let value8 := TestInductive7.case4 value7 [value6] value5
   test_roundtrip "Recursive Inductive 2" value8
 
 def run : IO Unit := do

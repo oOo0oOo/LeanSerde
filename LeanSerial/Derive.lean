@@ -1,7 +1,7 @@
 import Lean
 import Lean.Elab.Command
 import Lean.Elab.Deriving.Basic
-import LeanSerial.Serializable
+import LeanSerial.Core
 
 open Lean Elab Meta Term Command
 
@@ -103,29 +103,26 @@ private def mkSerializableQuotation (typeId : TSyntax `ident) (constructorData :
 
 def mkSerializableInstance (typeName : Name) : CommandElabM Unit := do
   let env ← getEnv
-  let some (ConstantInfo.inductInfo inductVal) := env.find? typeName
-    | throwError "not an inductive type"
+  if let some (ConstantInfo.inductInfo inductVal) := env.find? typeName then do
+    let typeId := mkIdent typeName
+    let constructorInfos ← inductVal.ctors.mapM fun ctorName => do
+      let some (ConstantInfo.ctorInfo ctorVal) := env.find? ctorName
+        | throwError s!"constructor {ctorName} not found"
+      return ctorVal
 
-  let typeId := mkIdent typeName
-  let constructorInfos ← inductVal.ctors.mapM fun ctorName => do
-    let some (ConstantInfo.ctorInfo ctorVal) := env.find? ctorName
-      | throwError s!"constructor {ctorName} not found"
-    return ctorVal
+    if constructorInfos.isEmpty then
+      throwError "Empty inductive type"
 
-  if constructorInfos.isEmpty then
-    throwError "Empty inductive type"
+    let constructorData ← constructorInfos.mapM (mkConstructorData typeId inductVal)
+    let cmds ← mkSerializableQuotation typeId constructorData constructorInfos inductVal.isRec
 
-  let constructorData ← constructorInfos.mapM (mkConstructorData typeId inductVal)
-  let cmds ← mkSerializableQuotation typeId constructorData constructorInfos inductVal.isRec
+    cmds.forM elabCommand
+  else
+    throwError s!"Type {typeName} is not an inductive type"
 
-  cmds.forM elabCommand
-
-def mkSerializableInstanceHandler (declName : Name) : CommandElabM Bool := do
+private def mkSerializableInstanceHandler (declName : Name) : CommandElabM Bool := do
   let env ← getEnv
-  let isInductive := env.find? declName matches some (ConstantInfo.inductInfo _)
-  let hasConstructor := env.find? (declName ++ `mk) matches some (ConstantInfo.ctorInfo _)
-
-  if isInductive || hasConstructor then do
+  if let some (ConstantInfo.inductInfo _) := env.find? declName then do
     mkSerializableInstance declName
     return true
   else
