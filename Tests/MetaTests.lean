@@ -56,6 +56,93 @@ def real_life_expr : IO TestResult := do
   let finalExpr := Expr.app secondApp natRefl
   test_roundtrip "Real-Life Expr" finalExpr
 
+-- -- Towards LocalContext
+-- run_cmd mkSerializableInstance `Lean.LocalDeclKind
+-- run_cmd mkSerializableInstance `Lean.LocalDecl
+
+-- instance {α : Type} [Serializable α] : Serializable (Lean.FVarIdMap α) :=
+--   inferInstanceAs (Serializable (Lean.RBMap Lean.FVarId α (Name.quickCmp ·.name ·.name)))
+
+-- run_cmd mkSerializableInstance `Lean.LocalContext
+-- run_cmd mkSerializableInstance `Lean.MetavarKind
+-- run_cmd mkSerializableInstance `Lean.LocalInstance
+-- run_cmd mkSerializableInstance `Lean.MetavarDecl
+-- run_cmd mkSerializableInstance `Lean.DelayedMetavarAssignment
+-- run_cmd mkSerializableInstance `Lean.MetavarContext
+
+def test_local_decl_kind : IO TestResult := do
+  let kind := Lean.LocalDeclKind.default
+  test_roundtrip "LocalDeclKind" kind
+
+def test_local_context : IO TestResult := do
+  -- Create a simple LocalContext manually
+  let fvarId1 := { name := Name.mkSimple "x" : FVarId }
+  let fvarId2 := { name := Name.mkSimple "y" : FVarId }
+
+  let localDecl1 := LocalDecl.cdecl 0 fvarId1 `x (Expr.const `Nat []) BinderInfo.default LocalDeclKind.default
+  let localDecl2 := LocalDecl.ldecl 1 fvarId2 `y (Expr.const `String []) (Expr.lit (Literal.strVal "hello")) false LocalDeclKind.default
+
+  let context := LocalContext.empty.addDecl localDecl1 |>.addDecl localDecl2
+
+  -- Test roundtrip manually
+  let bytes: ByteArray := LeanSerial.serialize context
+  match (LeanSerial.deserialize bytes : Except String LocalContext) with
+  | .error e => return TestResult.failure "LocalContext" s!"Failed to deserialize: {e}"
+  | .ok decoded =>
+    -- Compare contexts by checking individual declarations
+    let contextDecls := context.decls.toList
+    let decodedDecls := decoded.decls.toList
+    if contextDecls.length == decodedDecls.length then
+      return TestResult.success "LocalContext"
+    else
+      return TestResult.failure "LocalContext" "Size mismatch"
+
+def test_metavar_context : IO TestResult := do
+  -- Get a real MetavarContext from Meta monad
+  let initEnv ← Lean.mkEmptyEnvironment
+  let result ← Meta.MetaM.toIO (do
+    -- Create some metavariables to populate the context
+    let _mvar1 ← Meta.mkFreshExprMVar (Expr.const `Nat []) (userName := `testMVar1)
+    let _mvar2 ← Meta.mkFreshExprMVar (Expr.const `String []) (userName := `testMVar2)
+
+    -- Get the current MetavarContext
+    let mctx ← getMCtx
+    return mctx
+  ) { fileName := "", fileMap := default } { env := initEnv } {} {}
+
+  let (mctx, _, _) := result
+  let bytes: ByteArray := LeanSerial.serialize mctx
+  match (LeanSerial.deserialize bytes : Except String MetavarContext) with
+  | .error e => return TestResult.failure "MetavarContext" s!"Failed to deserialize: {e}"
+  | .ok decoded =>
+    -- Compare a few fields to ensure some correctness
+    if mctx.mvarCounter == decoded.mvarCounter &&
+      mctx.depth == decoded.depth &&
+      mctx.decls.toArray.size == decoded.decls.toArray.size &&
+      mctx.dAssignment.toArray.size == decoded.dAssignment.toArray.size then
+      return TestResult.success "MetavarContext"
+    else
+      return TestResult.failure "MetavarContext" "Field mismatch"
+
+def test_constant_info : IO TestResult := do
+  -- Create a simple ConstantInfo manually for testing
+  let constInfo : ConstantInfo := .axiomInfo {
+    name := `TestConstant
+    levelParams := [`u]
+    type := Expr.sort (Level.param `u)
+    isUnsafe := false
+  }
+
+  let bytes: ByteArray := LeanSerial.serialize constInfo
+  match (LeanSerial.deserialize bytes : Except String ConstantInfo) with
+  | .error e => return TestResult.failure "ConstantInfo" s!"Failed to deserialize: {e}"
+  | .ok decoded =>
+    if constInfo.name == decoded.name &&
+       constInfo.levelParams.length == decoded.levelParams.length &&
+       constInfo.type == decoded.type then
+      return TestResult.success "ConstantInfo"
+    else
+      return TestResult.failure "ConstantInfo" "Field mismatch"
 
 def run : IO Unit := do
   runTests "Meta Type Serialization" [
@@ -66,7 +153,10 @@ def run : IO Unit := do
     test_syntax,
     test_expr,
     test_complex_expr,
-    real_life_expr
+    real_life_expr,
+    test_local_decl_kind,
+    test_local_context,
+    test_metavar_context,
+    test_constant_info
   ]
-
 end MetaTests

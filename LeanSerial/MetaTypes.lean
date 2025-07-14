@@ -1,8 +1,10 @@
 import Lean
 import Lean.Data.KVMap
+import Lean.Meta.Diagnostics
 import LeanSerial.Derive
 import LeanSerial.PrimitiveTypes
 import LeanSerial.ContainerTypes
+import LeanSerial.LibraryTypes
 
 open Lean
 
@@ -46,7 +48,7 @@ instance : Serializable Lean.SourceInfo where
       .error s!"Expected SourceInfo compound, got {repr other}"
 
 -- deriving instance Serializable for Lean.Syntax  -- Takes forever!
-run_cmd mkSerializableInstance `Lean.Syntax  -- Much faster!!
+run_cmd mkSerializableInstance `Lean.Syntax  -- Faster?
 
 -- Towards Expr
 run_cmd mkSerializableInstance `Lean.FVarId
@@ -69,5 +71,41 @@ instance : Serializable Lean.KVMap where
     .ok ⟨entries.toList⟩
 
 run_cmd mkSerializableInstance `Lean.Expr
+
+-- Towards MetavarContext
+run_cmd mkSerializableInstance `Lean.LocalDeclKind
+run_cmd mkSerializableInstance `Lean.LocalDecl
+
+instance {α : Type} [Serializable α] : Serializable (Lean.FVarIdMap α) :=
+  inferInstanceAs (Serializable (Lean.RBMap Lean.FVarId α (Name.quickCmp ·.name ·.name)))
+
+run_cmd mkSerializableInstance `Lean.LocalContext
+run_cmd mkSerializableInstance `Lean.MetavarKind
+run_cmd mkSerializableInstance `Lean.LocalInstance
+run_cmd mkSerializableInstance `Lean.MetavarDecl
+run_cmd mkSerializableInstance `Lean.DelayedMetavarAssignment
+run_cmd mkSerializableInstance `Lean.MetavarContext
+
+-- Environment is very HARD!
+--> InfoTree, TacticM
+
+-- Towards ConstantInfo
+run_cmd mkSerializableInstance `Lean.ConstantVal
+run_cmd mkSerializableInstance `Lean.AxiomVal
+run_cmd mkSerializableInstance `Lean.ReducibilityHints
+run_cmd mkSerializableInstance `Lean.DefinitionSafety
+run_cmd mkSerializableInstance `Lean.TheoremVal
+run_cmd mkSerializableInstance `Lean.OpaqueVal
+run_cmd mkSerializableInstance `Lean.QuotKind
+run_cmd mkSerializableInstance `Lean.QuotVal
+run_cmd mkSerializableInstance `Lean.ConstructorVal
+run_cmd mkSerializableInstance `Lean.InductiveVal
+run_cmd mkSerializableInstance `Lean.DefinitionVal
+run_cmd mkSerializableInstance `Lean.RecursorRule
+run_cmd mkSerializableInstance `Lean.RecursorVal
+run_cmd mkSerializableInstance `Lean.ConstantInfo
+
+-- Various
+run_cmd mkSerializableInstance `Lean.Widget.UserWidgetDefinition
 
 end LeanSerial

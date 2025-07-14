@@ -5,6 +5,7 @@ import Std.Data.HashSet
 import Lean.Data.Json
 import Lean.Data.Position
 import Lean.Data.RBMap
+import Lean.Data.PersistentHashMap
 
 open TestFramework
 
@@ -74,6 +75,27 @@ def test_rbmap : IO Unit := do
   else
     IO.println s!"  ✗ RBMap: {result.error.getD "Unknown error"}"
 
+-- PersistentHashMap
+def test_persistent_hashmap_impl : IO TestResult := do
+  let phm1 := Lean.PersistentHashMap.empty.insert 1 "one" |>.insert 2 "two" |>.insert 3 "three"
+  let bytes: ByteArray := LeanSerial.serialize phm1
+  match (LeanSerial.deserialize bytes : Except String (Lean.PersistentHashMap Nat String)) with
+  | .error e => return TestResult.failure "PersistentHashMap" s!"Failed to deserialize: {e}"
+  | .ok phm2 =>
+    let list1 := phm1.toList.toArray.qsort (fun a b => a.1 < b.1)
+    let list2 := phm2.toList.toArray.qsort (fun a b => a.1 < b.1)
+    if list1.size == list2.size &&
+       (List.range list1.size).all (fun i => list1[i]! == list2[i]!) then
+      return TestResult.success "PersistentHashMap"
+    else
+      return TestResult.failure "PersistentHashMap" "Value mismatch"
+
+def test_persistent_hashmap : IO Unit := do
+  let result ← test_persistent_hashmap_impl
+  if result.passed then
+    IO.println "  ✓ PersistentHashMap"
+  else
+    IO.println s!"  ✗ PersistentHashMap: {result.error.getD "Unknown error"}"
 
 def run : IO Unit := do
   runTests "Standard Library Types" [
@@ -85,5 +107,6 @@ def run : IO Unit := do
   test_hashmap
   test_hashset
   test_rbmap
+  test_persistent_hashmap
 
 end LibraryTests

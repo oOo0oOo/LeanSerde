@@ -3,6 +3,9 @@ import Std.Data.HashSet
 import Lean.Data.Json
 import Lean.Data.Position
 import Lean.Data.RBMap
+import Lean.Data.PersistentHashMap
+import Lean.Data.PersistentArray
+-- import Std.Fo
 import LeanSerial.PrimitiveTypes
 import LeanSerial.Derive
 
@@ -73,5 +76,53 @@ instance {k v : Type} [Serializable k] [Serializable v] {cmp : k → k → Order
           .ok (key, value)
       | _ => .error s!"Expected Entry compound, got {repr entry}")
     .ok (Lean.RBMap.ofList entries.toList)
+
+-- Lean.PersistentHashMap
+instance {k v : Type} [Serializable k] [Serializable v] [BEq k] [Hashable k] : Serializable (Lean.PersistentHashMap k v) where
+  encode m := .compound "PersistentHashMap" ((m.toList.map (fun ⟨k, v⟩ => .compound "Entry" #[encode k, encode v])).toArray)
+  decode sv := do
+    let args ← decodeCompound "PersistentHashMap" sv
+    let entries ← args.mapM (fun entry => match entry with
+      | .compound "Entry" #[k, v] =>
+        do
+          let key ← decode k
+          let value ← decode v
+          .ok (key, value)
+      | _ => .error s!"Expected Entry compound, got {repr entry}")
+    .ok (entries.toList.foldl (fun acc ⟨k, v⟩ => acc.insert k v) Lean.PersistentHashMap.empty)
+
+-- Lean.PersistentArray
+instance [Serializable α] : Serializable (Lean.PersistentArray α) where
+  encode arr := .compound "PersistentArray" (arr.toList.map encode |>.toArray)
+  decode sv := do
+    let args ← decodeCompound "PersistentArray" sv
+    let elems ← args.mapM decode |>.mapError (·)
+    if elems.isEmpty then
+      .ok Lean.PersistentArray.empty
+    else
+      .ok (elems.foldl (init := Lean.PersistentArray.empty) (fun acc elem => acc.push elem))
+
+-- Position and FileMap basics
+instance : Serializable Lean.Position where
+  encode pos := .compound "Position" #[.nat pos.line, .nat pos.column]
+  decode sv := do
+    match sv with
+    | .compound "Position" #[.nat line, .nat col] =>
+      .ok ⟨line, col⟩
+    | .compound "Position" args =>
+      .error s!"Position expects 2 args, got {args.size}"
+    | other =>
+      .error s!"Expected Position compound, got {repr other}"
+
+-- Basic Format support
+instance : Serializable Std.Format.FlattenBehavior where
+  encode fb := match fb with
+    | .allOrNone => .compound "FlattenBehavior.allOrNone" #[]
+    | .fill => .compound "FlattenBehavior.fill" #[]
+  decode sv := do
+    match sv with
+    | .compound "FlattenBehavior.allOrNone" #[] => .ok Std.Format.FlattenBehavior.allOrNone
+    | .compound "FlattenBehavior.fill" #[] => .ok Std.Format.FlattenBehavior.fill
+    | _ => .error s!"Expected FlattenBehavior compound, got {repr sv}"
 
 end LeanSerial

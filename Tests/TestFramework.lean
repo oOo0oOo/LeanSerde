@@ -45,6 +45,20 @@ def test_roundtrip {α} [Serializable α] [BEq α] (testName: String) (value : �
       if !(value == deserializedValue) then
         return TestResult.failure testName "Value mismatch after String roundtrip"
 
+    -- Test to/from file
+    let filePath := s!"{testName}.test"
+    LeanSerial.serializeToJsonFile value filePath
+    let fileValue : Except String α ← LeanSerial.deserializeFromJsonFile filePath
+    match fileValue with
+    | .error e =>
+      return TestResult.failure testName s!"Failed to deserialize from file: {e}"
+    | .ok deserializedValue =>
+      if !(value == deserializedValue) then
+        return TestResult.failure testName "Value mismatch after file roundtrip"
+
+    -- Clean up test file
+    _ ← IO.FS.removeFile filePath
+
     return TestResult.success testName
   catch e =>
     return TestResult.failure testName s!"Exception: {e}"
