@@ -87,12 +87,12 @@ deriving LeanSerial.Serializable, BEq
 -- Mutually recursive inductive
 inductive TestInductive5
 | leaf : TestInductive5
-| zero : TestInductive5 → TestInductive5
+| zero : List TestInductive5 → TestInductive5
 deriving LeanSerial.Serializable, BEq
 
 inductive TestInductive6
 | case1 : TestInductive5 → TestInductive6
-| case2 : TestInductive6 → TestInductive5 → TestInductive6
+| case2 : Array TestInductive6 → TestInductive5 → TestInductive6
 deriving LeanSerial.Serializable, BEq
 
 inductive TestInductive7
@@ -119,15 +119,15 @@ def test_multiple_cases_inductive : IO TestResult := do
   test_roundtrip "Multiple Cases Inductive" value3
 
 def test_recursive_inductive : IO TestResult := do
-  let value5 := TestInductive5.zero (TestInductive5.leaf)
+  let value5 := TestInductive5.zero ([TestInductive5.leaf])
   test_roundtrip "Recursive Inductive" value5
 
 def test_mutually_recursive_inductive : IO TestResult := do
-  let value6 := TestInductive6.case1 (TestInductive5.zero (TestInductive5.leaf))
+  let value6 := TestInductive6.case1 (TestInductive5.zero ([TestInductive5.leaf]))
   test_roundtrip "Mutually Recursive Inductive" value6
 
 def test_recursive_inductive2 : IO TestResult := do
-  let value5 := TestInductive5.zero (TestInductive5.leaf)
+  let value5 := TestInductive5.zero ([TestInductive5.leaf])
   let value6 := TestInductive6.case1 value5
   let value7 := TestInductive7.case3 value6
   let value8 := TestInductive7.case4 value7 [value6] value5

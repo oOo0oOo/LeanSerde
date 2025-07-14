@@ -4,6 +4,7 @@ import Lean.Data.Json
 import Lean.Data.Position
 import Lean.Data.RBMap
 import LeanSerial.PrimitiveTypes
+import LeanSerial.Derive
 
 namespace LeanSerial
 

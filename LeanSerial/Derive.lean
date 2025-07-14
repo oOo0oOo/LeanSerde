@@ -28,17 +28,62 @@ private def mkConstructorData (typeId : TSyntax `ident) (inductVal : InductiveVa
         types := types.push localDecl.type
       return types.toList
 
+  -- Helper function to check if a type contains the inductive type being defined
+  let rec containsInductiveType (expr : Expr) : Bool :=
+    if expr.isAppOf inductVal.name then
+      true
+    else
+      match expr with
+      | .app f a => containsInductiveType f || containsInductiveType a
+      | _ => false
+
+  -- Helper function to check if this is a direct container of the inductive type
+  let isDirectContainer (expr : Expr) : Bool :=
+    match expr with
+    | .app (.const `List _) inner => inner.isAppOf inductVal.name
+    | .app (.const `Array _) inner => inner.isAppOf inductVal.name
+    | _ => false
+
   let encodeElems ← fieldTerms.zip fieldTypes |>.mapM fun (fieldTerm, fieldType) => do
     if fieldType.isAppOf inductVal.name then
       `($encodeFnName:ident $fieldTerm)
+    else if isDirectContainer fieldType then
+      -- Direct container like List, Array
+      match fieldType with
+      | .app (.const `List _) _ =>
+        `(LeanSerial.SerialValue.compound "List" (($fieldTerm).map $encodeFnName:ident |>.toArray))
+      | .app (.const `Array _) _ =>
+        `(LeanSerial.SerialValue.compound "Array" (($fieldTerm).map $encodeFnName:ident))
+      | _ =>
+        `(LeanSerial.encode $fieldTerm)
     else
       `(LeanSerial.encode $fieldTerm)
 
   let decodeStmts ← fieldIds.zip fieldTypes |>.mapIdxM fun i (fieldId, fieldType) => do
     if fieldType.isAppOf inductVal.name then
-      `(doElem| let $fieldId ← $decodeFnName:ident args[$(quote i)]!)
+      pure [← `(doElem| let $fieldId ← $decodeFnName:ident args[$(quote i)]!)]
+    else if isDirectContainer fieldType then
+      -- Direct container like List, Array
+      match fieldType with
+      | .app (.const `List _) _ =>
+        pure [
+          ← `(doElem| let containerSv := args[$(quote i)]!),
+          ← `(doElem| let containerArgs ← LeanSerial.decodeCompound "List" containerSv),
+          ← `(doElem| let listResult ← containerArgs.mapM $decodeFnName:ident),
+          ← `(doElem| let $fieldId := listResult.toList)
+        ]
+      | .app (.const `Array _) _ =>
+        pure [
+          ← `(doElem| let containerSv := args[$(quote i)]!),
+          ← `(doElem| let containerArgs ← LeanSerial.decodeCompound "Array" containerSv),
+          ← `(doElem| let $fieldId ← containerArgs.mapM $decodeFnName:ident)
+        ]
+      | _ =>
+        pure [← `(doElem| let $fieldId ← LeanSerial.decode args[$(quote i)]!)]
     else
-      `(doElem| let $fieldId ← LeanSerial.decode args[$(quote i)]!)
+      pure [← `(doElem| let $fieldId ← LeanSerial.decode args[$(quote i)]!)]
+
+  let decodeStmts := decodeStmts.flatten
 
   let ctorApp ← fieldTerms.foldlM (fun acc fieldTerm => `($acc $fieldTerm)) (⟨ctorId⟩ : TSyntax `term)
 

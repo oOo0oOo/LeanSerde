@@ -1,4 +1,5 @@
 import Lean
+import Lean.Data.KVMap
 import LeanSerial.Derive
 import LeanSerial.PrimitiveTypes
 import LeanSerial.ContainerTypes
@@ -44,60 +45,28 @@ instance : Serializable Lean.SourceInfo where
     | other =>
       .error s!"Expected SourceInfo compound, got {repr other}"
 
+deriving instance Serializable for Lean.Syntax
 
-mutual
-  partial def encodeSyntax (syn : Lean.Syntax) : LeanSerial.SerialValue :=
-    match syn with
-    | .atom info val => .compound "Syntax.atom" #[encode info, encode val]
-    | .ident info rawVal val preresolved => .compound "Syntax.ident" #[encode info, encode rawVal, encode val, encode preresolved]
-    | .node info kind args => .compound "Syntax.node" #[encode info, encode kind, encodeArraySyntax args]
-    | .missing => .compound "Syntax.missing" #[]
+-- Towards Expr
+deriving instance Serializable for Lean.FVarId
+deriving instance Serializable for Lean.MVarId
+deriving instance Serializable for Lean.BinderInfo
+deriving instance Serializable for Lean.Literal
+deriving instance Serializable for Lean.DataValue
 
-  partial def decodeSyntax (sv : LeanSerial.SerialValue) : Except String Lean.Syntax := do
-    match sv with
-    | .compound "Syntax.atom" #[info, val] => do
-      let info ← decode info
-      let val ← decode val
-      .ok (Lean.Syntax.atom info val)
-    | .compound "Syntax.ident" #[info, rawVal, val, preresolved] => do
-      let info ← decode info
-      let rawVal ← decode rawVal
-      let val ← decode val
-      let preresolved ← decode preresolved
-      .ok (Lean.Syntax.ident info rawVal val preresolved)
-    | .compound "Syntax.node" #[info, kind, args] => do
-      let info ← decode info
-      let kind ← decode kind
-      let args ← decodeArraySyntax args
-      .ok (Lean.Syntax.node info kind args)
-    | .compound "Syntax.missing" #[] =>
-      .ok Lean.Syntax.missing
-    | .compound name args =>
-      .error s!"Unknown Syntax constructor: {name} with {args.size} args"
-    | other =>
-      .error s!"Expected Syntax compound, got {repr other}"
+instance : Serializable Lean.KVMap where
+  encode m := .compound "KVMap" (m.entries.map (fun ⟨k, v⟩ => .compound "Entry" #[encode k, encode v]) |>.toArray)
+  decode sv := do
+    let args ← decodeCompound "KVMap" sv
+    let entries ← args.mapM (fun entry => match entry with
+      | .compound "Entry" #[k, v] =>
+        do
+          let key ← decode k
+          let value ← decode v
+          .ok (key, value)
+      | _ => .error s!"Expected Entry compound, got {repr entry}")
+    .ok ⟨entries.toList⟩
 
-  partial def encodeArraySyntax (arr : Array Lean.Syntax) : LeanSerial.SerialValue :=
-    .compound "Array" (arr.map encodeSyntax)
-
-  partial def decodeArraySyntax (sv : LeanSerial.SerialValue) : Except String (Array Lean.Syntax) := do
-    let args ← decodeCompound "Array" sv
-    args.mapM decodeSyntax |>.mapError (·)
-end
-
-instance : Serializable Lean.Syntax where
-  encode := encodeSyntax
-  decode := decodeSyntax
-
--- run_cmd mkSerializableInstance `Lean.Literal
--- run_cmd mkSerializableInstance `Lean.BinderInfo
--- run_cmd mkSerializableInstance `Lean.FVarId
--- run_cmd mkSerializableInstance `Lean.MVarId
-
-
-
--- run_cmd mkSerializableInstance `Lean.DataValue
--- run_cmd mkSerializableInstance `Lean.KVMap
--- run_cmd mkSerializableInstance `Lean.Expr
+deriving instance Serializable for Lean.Expr
 
 end LeanSerial
