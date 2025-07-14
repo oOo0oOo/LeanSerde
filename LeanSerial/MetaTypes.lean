@@ -9,12 +9,12 @@ open Lean
 namespace LeanSerial
 
 -- Towards Level
-deriving instance Serializable for Lean.Name
-deriving instance Serializable for Lean.LevelMVarId
-deriving instance Serializable for Lean.Level
+run_cmd mkSerializableInstance `Lean.Name
+run_cmd mkSerializableInstance `Lean.LevelMVarId
+run_cmd mkSerializableInstance `Lean.Level
 
 -- Towards Syntax
-deriving instance Serializable for Lean.Syntax.Preresolved
+run_cmd mkSerializableInstance `Lean.Syntax.Preresolved
 
 instance : Serializable Lean.SourceInfo where
   encode si := match si with
@@ -45,14 +45,15 @@ instance : Serializable Lean.SourceInfo where
     | other =>
       .error s!"Expected SourceInfo compound, got {repr other}"
 
-deriving instance Serializable for Lean.Syntax
+-- deriving instance Serializable for Lean.Syntax  -- Takes forever!
+run_cmd mkSerializableInstance `Lean.Syntax  -- Much faster!!
 
 -- Towards Expr
-deriving instance Serializable for Lean.FVarId
-deriving instance Serializable for Lean.MVarId
-deriving instance Serializable for Lean.BinderInfo
-deriving instance Serializable for Lean.Literal
-deriving instance Serializable for Lean.DataValue
+run_cmd mkSerializableInstance `Lean.FVarId
+run_cmd mkSerializableInstance `Lean.MVarId
+run_cmd mkSerializableInstance `Lean.BinderInfo
+run_cmd mkSerializableInstance `Lean.Literal
+run_cmd mkSerializableInstance `Lean.DataValue
 
 instance : Serializable Lean.KVMap where
   encode m := .compound "KVMap" (m.entries.map (fun ⟨k, v⟩ => .compound "Entry" #[encode k, encode v]) |>.toArray)
@@ -67,6 +68,6 @@ instance : Serializable Lean.KVMap where
       | _ => .error s!"Expected Entry compound, got {repr entry}")
     .ok ⟨entries.toList⟩
 
-deriving instance Serializable for Lean.Expr
+run_cmd mkSerializableInstance `Lean.Expr
 
 end LeanSerial

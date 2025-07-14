@@ -42,6 +42,16 @@ private def generateContainerDecode (fieldType : Expr) (fieldId : Ident) (index 
 
 private def mkConstructorData (typeId : TSyntax `ident) (inductVal : InductiveVal) (ctor : ConstructorVal) : CommandElabM ConstructorData := do
   let ctorId := mkIdent ctor.name
+
+  if ctor.numFields = 0 then
+    return {
+      encodePattern := ⟨ctorId⟩,
+      encodeElems := #[],
+      name := ctor.name.toString,
+      ctorApp := ⟨ctorId⟩,
+      decodeStmts := #[]
+    }
+
   let fieldIds := (Array.range ctor.numFields).map (mkIdent ∘ mkFieldName)
   let fieldTerms := fieldIds.map fun fieldId => ⟨fieldId⟩
 
@@ -58,33 +68,23 @@ private def mkConstructorData (typeId : TSyntax `ident) (inductVal : InductiveVa
         types := types.push localDecl.type
       return types
 
-  -- Helper function to check if a type contains the inductive type being defined
-  let rec containsInductiveType (expr : Expr) : Bool :=
-    if expr.isAppOf inductVal.name then
-      true
-    else
-      match expr with
-      | .app f a => containsInductiveType f || containsInductiveType a
+  let result ← fieldTerms.zip fieldIds |>.zip fieldTypes |>.mapIdxM fun i ((fieldTerm, fieldId), fieldType) => do
+    let isDirectRecursive := fieldType.isAppOf inductVal.name
+    let isSimpleContainer := match fieldType with
+      | .app (.const name _) inner =>
+        (name == `List || name == `Array) && inner.isAppOf inductVal.name
       | _ => false
 
-  -- Helper function to check if this is a direct container of the inductive type
-  let isDirectContainer (expr : Expr) : Bool :=
-    match expr with
-    | .app (.const name _) inner =>
-      (name == `List || name == `Array) && inner.isAppOf inductVal.name
-    | _ => false
-
-  let result ← fieldTerms.zip fieldIds |>.zip fieldTypes |>.mapIdxM fun i ((fieldTerm, fieldId), fieldType) => do
-    let encodeElem ← if fieldType.isAppOf inductVal.name then
+    let encodeElem ← if isDirectRecursive then
       `($encodeFnName:ident $fieldTerm)
-    else if isDirectContainer fieldType then
+    else if isSimpleContainer then
       generateContainerEncode fieldType fieldTerm encodeFnName
     else
       `(LeanSerial.encode $fieldTerm)
 
-    let decodeStmt ← if fieldType.isAppOf inductVal.name then
+    let decodeStmt ← if isDirectRecursive then
       pure #[← `(doElem| let $fieldId ← $decodeFnName:ident args[$(quote i)]!)]
-    else if isDirectContainer fieldType then
+    else if isSimpleContainer then
       let stmts ← generateContainerDecode fieldType fieldId i decodeFnName
       pure stmts.toArray
     else
@@ -92,8 +92,8 @@ private def mkConstructorData (typeId : TSyntax `ident) (inductVal : InductiveVa
 
     return (encodeElem, decodeStmt)
 
-  let (encodeElems, decodeStmtsList) := result.unzip
-  let decodeStmts := decodeStmtsList.flatten
+  let (encodeElems, decodeStmts) := result.unzip
+  let decodeStmts := decodeStmts.flatten
 
   let ctorApp ← fieldTerms.foldlM (fun acc fieldTerm => `($acc $fieldTerm)) (⟨ctorId⟩ : TSyntax `term)
 
