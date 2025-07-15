@@ -1,12 +1,13 @@
 import Lean
 import Lean.Data.KVMap
 import Lean.Meta.Diagnostics
+import Lean.Environment
 import LeanSerial.Derive
 import LeanSerial.PrimitiveTypes
 import LeanSerial.ContainerTypes
 import LeanSerial.LibraryTypes
 
-open Lean
+open Lean Environment
 
 namespace LeanSerial
 
@@ -86,9 +87,6 @@ run_cmd mkSerializableInstance `Lean.MetavarDecl
 run_cmd mkSerializableInstance `Lean.DelayedMetavarAssignment
 run_cmd mkSerializableInstance `Lean.MetavarContext
 
--- Environment is very HARD!
---> InfoTree, TacticM
-
 -- Towards ConstantInfo
 run_cmd mkSerializableInstance `Lean.ConstantVal
 run_cmd mkSerializableInstance `Lean.AxiomVal
@@ -104,6 +102,141 @@ run_cmd mkSerializableInstance `Lean.DefinitionVal
 run_cmd mkSerializableInstance `Lean.RecursorRule
 run_cmd mkSerializableInstance `Lean.RecursorVal
 run_cmd mkSerializableInstance `Lean.ConstantInfo
+
+
+-- Towards Environment (only partial serialization and deserialization)
+
+-- Supporting types
+instance : Serializable ModuleIdx where
+  encode idx := .nat idx.toNat
+  decode := fun | .nat n => .ok n | other => .error s!"Expected ModuleIdx, got {repr other}"
+
+run_cmd mkSerializableInstance `Lean.Import
+
+instance [Serializable α] [Serializable β] [BEq α] [Hashable α] : Serializable (Lean.SMap α β) where
+  encode m := .compound "SMap" (m.toList.map (fun ⟨k, v⟩ => .compound "Entry" #[encode k, encode v]) |>.toArray)
+  decode sv := do
+    let args ← decodeCompound "SMap" sv
+    let entries ← args.mapM (fun entry => match entry with
+      | .compound "Entry" #[k, v] =>
+        do
+          let key ← decode k
+          let value ← decode v
+          .ok (key, value)
+      | _ => .error s!"Expected Entry compound, got {repr entry}")
+    .ok (entries.toList.foldl (fun acc ⟨k, v⟩ => acc.insert k v) Lean.SMap.empty)
+
+instance : Serializable Lean.NameSet where
+  encode s := .compound "NameSet" (s.toList.map encode |>.toArray)
+  decode sv := do
+    let args ← decodeCompound "NameSet" sv
+    let names ← args.mapM decode
+    .ok (names.toList.foldl (fun acc name => acc.insert name) Lean.NameSet.empty)
+
+instance : Serializable (NameMap String) where
+  encode m := .compound "NameMapString" (m.toList.map (fun ⟨k, v⟩ => .compound "Entry" #[encode k, encode v]) |>.toArray)
+  decode sv := do
+    let args ← decodeCompound "NameMapString" sv
+    let entries ← args.mapM (fun entry => match entry with
+      | .compound "Entry" #[k, v] =>
+        do
+          let key ← decode k
+          let value ← decode v
+          .ok (key, value)
+      | _ => .error s!"Expected Entry compound, got {repr entry}")
+    .ok (entries.toList.foldl (fun acc ⟨k, v⟩ => acc.insert k v) {})
+
+instance : Serializable Kernel.Diagnostics where
+  encode diag := .compound "Diagnostics" #[
+    encode diag.unfoldCounter,
+    encode diag.enabled
+  ]
+  decode sv := do
+    let args ← decodeCompound "Diagnostics" sv
+    if args.size = 2 then do
+      let unfoldCounter ← decode args[0]!
+      let enabled ← decode args[1]!
+      .ok { unfoldCounter, enabled }
+    else
+      .error s!"Diagnostics expects 2 args, got {args.size}"
+
+instance : Serializable Lean.Options where
+  encode := encode (α := Lean.KVMap)
+  decode := decode (α := Lean.KVMap)
+
+instance : Serializable Lean.ModuleData where
+  encode md := .compound "ModuleData" #[
+    encode md.isModule,
+    encode md.imports,
+    encode md.constNames,
+    encode md.constants,
+    encode md.extraConstNames,
+    -- Skip md.entries: (Array (Name × Array EnvExtensionEntry))
+  ]
+  decode sv := do
+    let args ← decodeCompound "ModuleData" sv
+    if args.size = 5 then do
+      let isModule ← decode args[0]!
+      let imports ← decode args[1]!
+      let constNames ← decode args[2]!
+      let constants ← decode args[3]!
+      let extraConstNames ← decode args[4]!
+      .ok {
+        isModule,
+        imports,
+        constNames,
+        constants,
+        extraConstNames,
+        entries := Array.empty  -- Not serialized
+      }
+    else
+      .error s!"ModuleData expects 5 args, got {args.size}"
+
+instance : Serializable Lean.CompactedRegion where
+  encode r := .nat r.toNat
+  decode := fun
+    | .nat n => .ok (USize.ofNat n)
+    | other => .error s!"Expected CompactedRegion, got {repr other}"
+
+run_cmd mkSerializableInstance `Lean.EnvironmentHeader
+
+-- Can only serialize a subset of Environment
+structure EnvironmentData where
+  constants : Array ConstantInfo
+  const2ModIdx : Std.HashMap Name ModuleIdx
+  quotInit : Bool
+  diagnostics : Kernel.Diagnostics
+  header : EnvironmentHeader
+  deriving LeanSerial.Serializable
+
+-- Helper function to add constant (following Lake pattern)
+@[extern "lake_environment_add"]
+private opaque lakeEnvironmentAdd (env : Environment) (_ : ConstantInfo) : Environment
+
+-- Environment serialization using monad lifting tricks (too hacky?)
+instance : Serializable Lean.Environment where
+  encode env :=
+    let kenv := env.toKernelEnv
+    encode ({
+      constants := kenv.constants.foldStage2 (fun cs _ c => cs.push c) #[],
+      const2ModIdx := kenv.const2ModIdx,
+      quotInit := kenv.quotInit,
+      diagnostics := kenv.diagnostics,
+      header := kenv.header
+    } : EnvironmentData)
+
+  decode sv := do
+    let data ← decode (α := EnvironmentData) sv
+    let ioAction : IO Environment := do
+      let env ← mkEmptyEnvironment data.header.trustLevel
+      let env := env.setMainModule data.header.mainModule
+      let finalEnv := data.constants.foldl lakeEnvironmentAdd env
+      return finalEnv
+    let baseIOAction : BaseIO (Except IO.Error Environment) := ioAction.toBaseIO
+    match baseIOAction.run ⟨⟩ with
+    | EStateM.Result.ok (Except.ok env) _ => .ok env
+    | EStateM.Result.ok (Except.error _) _ => .error "IO.Error during environment creation"
+    | EStateM.Result.error _ _ => .error "Failed to create environment"
 
 -- Various
 run_cmd mkSerializableInstance `Lean.Widget.UserWidgetDefinition

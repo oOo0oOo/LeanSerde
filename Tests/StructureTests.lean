@@ -68,6 +68,9 @@ inductive TestInductive
 | true
 | false
 | none
+| runtime
+| comptime
+| all
 deriving LeanSerial.Serializable, BEq
 
 inductive TestInductive2

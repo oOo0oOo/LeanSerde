@@ -144,6 +144,22 @@ def test_constant_info : IO TestResult := do
     else
       return TestResult.failure "ConstantInfo" "Field mismatch"
 
+def test_empty_environment : IO TestResult := do
+  let env ← Lean.mkEmptyEnvironment
+  let bytes: ByteArray := LeanSerial.serialize env
+  match (LeanSerial.deserialize bytes : Except String Environment) with
+  | .error e => return TestResult.failure "Environment" s!"Failed to deserialize: {e}"
+  | .ok decoded =>
+    if env.mainModule == decoded.mainModule &&
+        env.isExporting == decoded.isExporting &&
+        env.asyncPrefix? == decoded.asyncPrefix? &&
+        env.header.trustLevel == decoded.header.trustLevel &&
+        env.constants.toList.length == decoded.constants.toList.length &&
+        env.const2ModIdx.size == decoded.const2ModIdx.size then
+      return TestResult.success "Empty Environment"
+    else
+      return TestResult.failure "Empty Environment" "Field mismatch"
+
 def run : IO Unit := do
   runTests "Meta Type Serialization" [
     test_name,
@@ -157,6 +173,7 @@ def run : IO Unit := do
     test_local_decl_kind,
     test_local_context,
     test_metavar_context,
-    test_constant_info
+    test_constant_info,
+    test_empty_environment
   ]
 end MetaTests
