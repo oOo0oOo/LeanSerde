@@ -160,6 +160,22 @@ def test_empty_environment : IO TestResult := do
     else
       return TestResult.failure "Empty Environment" "Field mismatch"
 
+def test_info_tree : IO TestResult := do
+  let mvarId := { name := Name.mkSimple "testMVar" : MVarId }
+  let infoTreeHole := Lean.Elab.InfoTree.hole mvarId
+
+  let bytes: ByteArray := LeanSerial.serialize infoTreeHole
+  match (LeanSerial.deserialize bytes : Except String Lean.Elab.InfoTree) with
+  | .error e => return TestResult.failure "InfoTree" s!"Failed to deserialize: {e}"
+  | .ok decoded =>
+    match infoTreeHole, decoded with
+    | .hole originalMVar, .hole decodedMVar =>
+      if originalMVar.name == decodedMVar.name then
+        return TestResult.success "InfoTree"
+      else
+        return TestResult.failure "InfoTree" "MVarId mismatch"
+    | _, _ => return TestResult.failure "InfoTree" "Constructor mismatch"
+
 def run : IO Unit := do
   runTests "Meta Type Serialization" [
     test_name,
@@ -174,6 +190,7 @@ def run : IO Unit := do
     test_local_context,
     test_metavar_context,
     test_constant_info,
-    test_empty_environment
+    test_empty_environment,
+    test_info_tree
   ]
 end MetaTests

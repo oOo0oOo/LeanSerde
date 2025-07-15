@@ -105,8 +105,6 @@ run_cmd mkSerializableInstance `Lean.ConstantInfo
 
 
 -- Towards Environment (only partial serialization and deserialization)
-
--- Supporting types
 instance : Serializable ModuleIdx where
   encode idx := .nat idx.toNat
   decode := fun | .nat n => .ok n | other => .error s!"Expected ModuleIdx, got {repr other}"
@@ -237,6 +235,69 @@ instance : Serializable Lean.Environment where
     | EStateM.Result.ok (Except.ok env) _ => .ok env
     | EStateM.Result.ok (Except.error _) _ => .error "IO.Error during environment creation"
     | EStateM.Result.error _ _ => .error "Failed to create environment"
+
+-- Towards InfoTree
+
+-- StateM & Dynamic: Encode type information only
+instance {σ α} [Inhabited α] : Serializable (StateM σ α) where
+  encode _ := .compound "StateM.phantom" #[]
+  decode _ := .ok (fun s => (default, s))
+
+deriving instance TypeName for String
+instance : Serializable Dynamic where
+  encode _ := .compound "Dynamic.phantom" #[]
+  decode _ := .ok (Dynamic.mk "phantom")
+
+run_cmd mkSerializableInstance `Lean.Widget.WidgetInstance
+run_cmd mkSerializableInstance `Lean.DeclarationRange
+run_cmd mkSerializableInstance `Lean.DeclarationLocation
+run_cmd mkSerializableInstance `Lean.Elab.MacroExpansionInfo
+run_cmd mkSerializableInstance `Lean.Elab.FieldInfo
+run_cmd mkSerializableInstance `Lean.Elab.OptionInfo
+run_cmd mkSerializableInstance `Lean.Elab.FieldRedeclInfo
+run_cmd mkSerializableInstance `Lean.Elab.FVarAliasInfo
+run_cmd mkSerializableInstance `Lean.Elab.UserWidgetInfo
+run_cmd mkSerializableInstance `Lean.Elab.CustomInfo
+run_cmd mkSerializableInstance `Lean.Elab.ElabInfo
+run_cmd mkSerializableInstance `Lean.Elab.ChoiceInfo
+run_cmd mkSerializableInstance `Lean.Elab.PartialTermInfo
+run_cmd mkSerializableInstance `Lean.Elab.TermInfo
+run_cmd mkSerializableInstance `Lean.Elab.CompletionInfo
+run_cmd mkSerializableInstance `Lean.Elab.DelabTermInfo
+run_cmd mkSerializableInstance `Lean.Elab.TacticInfo
+run_cmd mkSerializableInstance `Lean.Elab.CommandInfo
+run_cmd mkSerializableInstance `Lean.Elab.Info
+run_cmd mkSerializableInstance `Lean.NameGenerator
+run_cmd mkSerializableInstance `Lean.OpenDecl
+run_cmd mkSerializableInstance `Lean.FileMap
+run_cmd mkSerializableInstance `Lean.Elab.CommandContextInfo
+run_cmd mkSerializableInstance `Lean.Elab.PartialContextInfo
+
+partial def encodeInfoTree (it : Lean.Elab.InfoTree) : SerialValue :=
+  match it with
+  | .context i t => .compound "InfoTree.context" #[encode i, encodeInfoTree t]
+  | .node i children => .compound "InfoTree.node" #[encode i, .compound "Array" (children.toArray.map encodeInfoTree)]
+  | .hole mvarId => .compound "InfoTree.hole" #[encode mvarId]
+
+partial def decodeInfoTree (sv : SerialValue) : Except String Lean.Elab.InfoTree := do
+  match sv with
+  | .compound "InfoTree.context" #[i, t] =>
+    let i ← decode i
+    let t ← decodeInfoTree t
+    .ok (.context i t)
+  | .compound "InfoTree.node" #[i, .compound "Array" childrenSvs] =>
+    let i ← decode i
+    let childrenDecoded ← childrenSvs.mapM decodeInfoTree
+    let childrenPersistent := childrenDecoded.foldl (fun acc child => acc.push child) Lean.PersistentArray.empty
+    .ok (.node i childrenPersistent)
+  | .compound "InfoTree.hole" #[mvarId] =>
+    let mvarId ← decode mvarId
+    .ok (.hole mvarId)
+  | _ => .error s!"Expected InfoTree compound, got {repr sv}"
+
+instance : Serializable Lean.Elab.InfoTree where
+  encode := encodeInfoTree
+  decode := decodeInfoTree
 
 -- Various
 run_cmd mkSerializableInstance `Lean.Widget.UserWidgetDefinition
