@@ -96,6 +96,13 @@ def decodeLength (s : DecodeState) : Option (Nat × DecodeState) := do
     let n := bytes[0]!.toNat * 16777216 + bytes[1]!.toNat * 65536 +
              bytes[2]!.toNat * 256 + bytes[3]!.toNat
     some (n, s'')
+  else if additionalInfo == 27 then do
+    let (bytes, s'') ← s'.consume 8
+    let n := bytes[0]!.toNat * 72057594037927936 + bytes[1]!.toNat * 281474976710656 +
+             bytes[2]!.toNat * 1099511627776 + bytes[3]!.toNat * 4294967296 +
+             bytes[4]!.toNat * 16777216 + bytes[5]!.toNat * 65536 +
+             bytes[6]!.toNat * 256 + bytes[7]!.toNat
+    some (n, s'')
   else
     none
 
@@ -125,7 +132,7 @@ partial def decodeSerialValue (s : DecodeState) : Option (SerialValue × DecodeS
   | .array => do
     let (arrayLen, s'') ← decodeLength ⟨s.data, s.pos⟩
     if arrayLen == 0 then
-      some (.compound "" #[], s'')
+      none
     else do
       let (nameVal, s''') ← decodeSerialValue s''
       let name ← match nameVal with | .str n => some n | _ => none
