@@ -56,15 +56,6 @@ class SerializableFormat (α : Type) where
   serializeValue : SerialValue → α
   deserializeValue : α → Except String SerialValue
 
-instance : SerializableFormat ByteArray where
-  serializeValue sv := (Lean.toJson sv).compress.toUTF8
-  deserializeValue bytes := do
-    let s ← match String.fromUTF8? bytes with
-      | some str => pure str
-      | none     => throw "Invalid UTF-8 in serialized data"
-    let json ← Lean.Json.parse s
-    Lean.fromJson? json
-
 instance : SerializableFormat Lean.Json where
   serializeValue sv := Lean.toJson sv
   deserializeValue json := Lean.fromJson? json

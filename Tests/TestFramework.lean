@@ -45,7 +45,7 @@ def test_roundtrip {α} [Serializable α] [BEq α] (testName: String) (value : �
       if !(value == deserializedValue) then
         return TestResult.failure testName "Value mismatch after String roundtrip"
 
-    -- Test to/from file
+    -- Test to/from file JSON
     let filePath := s!"{testName}.test"
     LeanSerial.serializeToJsonFile value filePath
     let fileValue : Except String α ← LeanSerial.deserializeFromJsonFile filePath
@@ -55,6 +55,16 @@ def test_roundtrip {α} [Serializable α] [BEq α] (testName: String) (value : �
     | .ok deserializedValue =>
       if !(value == deserializedValue) then
         return TestResult.failure testName "Value mismatch after file roundtrip"
+
+    -- Test to/from file CBOR
+    LeanSerial.serializeToFile value filePath
+    let fileValueCBOR : Except String α ← LeanSerial.deserializeFromFile filePath
+    match fileValueCBOR with
+    | .error e =>
+      return TestResult.failure testName s!"Failed to deserialize from CBOR file: {e}"
+    | .ok deserializedValue =>
+      if !(value == deserializedValue) then
+        return TestResult.failure testName "Value mismatch after CBOR file roundtrip"
 
     -- Clean up test file
     _ ← IO.FS.removeFile filePath
