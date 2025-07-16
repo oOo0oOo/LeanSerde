@@ -162,7 +162,7 @@ def test_info_tree : IO TestResult := do
         return TestResult.failure "InfoTree" "MVarId mismatch"
     | _, _ => return TestResult.failure "InfoTree" "Constructor mismatch"
 
-def run : IO Unit := do
+def run: IO Bool := do
   runTests "Meta Type Serialization" [
     test_name,
     test_lmvar_id,

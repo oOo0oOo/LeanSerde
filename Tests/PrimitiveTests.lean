@@ -17,7 +17,7 @@ def test_thunk : IO TestResult := do
     else
       return TestResult.failure "Thunk" "Value mismatch"
 
-def run : IO Unit := runTests "Primitive Types" [
+def run: IO Bool := runTests "Primitive Types" [
   -- Numeric Types
   test_roundtrip "Nat" 42,
   test_roundtrip "Float" (3.141592653 : Float),

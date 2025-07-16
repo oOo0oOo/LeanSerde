@@ -78,16 +78,8 @@ def test_zoned_datetime : IO Unit := do
   else
     IO.println s!"  ✗ ZonedDateTime: {result.error.getD "Unknown error"}"
 
-def test_zone_rules : IO Unit := do
-  runTests "Zone Rules" [
-    test_utc_zone_rules,
-    test_est_zone_rules,
-    test_dst_zone_rules
-  ]
-
-
-def run : IO Unit := do
-  runTests "Time Units" [
+def run: IO Bool := do
+  let result1 ← runTests "Time Units" [
     test_roundtrip "Year" (Std.Time.Year.Offset.ofInt 2023),
     test_roundtrip "Month" (Std.Time.Month.Ordinal.ofNat 5),
     test_roundtrip "Week" (Std.Time.Week.Ordinal.ofNat 2),
@@ -101,25 +93,38 @@ def run : IO Unit := do
     test_roundtrip "Nanosecond" (Std.Time.Nanosecond.Ordinal.ofNat 999_999_999 (by decide))
   ]
 
-  runTests "Time Structures" [
+  let result2 ← runTests "Time Structures" [
     test_roundtrip "Timestamp" (Std.Time.Timestamp.ofSecondsSinceUnixEpoch ⟨2000000000⟩),
     test_roundtrip "PlainDate" (Std.Time.PlainDate.ofYearMonthDay? 2023 5 15),
     test_roundtrip "PlainTime" (Std.Time.PlainTime.ofHourMinuteSeconds 10 30 45),
     test_roundtrip "TimeZone" (Std.Time.TimeZone.mk ⟨0⟩ "UTC" "UTC" false)
   ]
 
-  -- Complex time tests
+  let result3 ← runTests "Zone Rules" [
+    test_utc_zone_rules,
+    test_est_zone_rules,
+    test_dst_zone_rules
+  ]
+
+  let result4 ← runTests "Complex DateTime" [
+    test_zoned_datetime_impl
+  ]
+
+  -- Test PlainDateTime separately since it needs special handling
   let dateTime := Std.Time.PlainDate.ofYearMonthDay? 2023 5 15
-  match dateTime with
-  | none => IO.println "  ✗ Failed to create PlainDate"
+  let dateTimeResult ← match dateTime with
+  | none =>
+    IO.println "  ✗ Failed to create PlainDate"
+    pure false
   | some date => do
     let result ← test_roundtrip "PlainDateTime" (Std.Time.PlainDateTime.mk date (Std.Time.PlainTime.ofHourMinuteSeconds 10 30 45))
     if result.passed then
       IO.println "  ✓ PlainDateTime"
+      pure true
     else
       IO.println s!"  ✗ PlainDateTime: {result.error.getD "Unknown error"}"
+      pure false
 
-  test_zone_rules
-  test_zoned_datetime
+  return result1 && result2 && result3 && result4 && dateTimeResult
 
 end TimeTests

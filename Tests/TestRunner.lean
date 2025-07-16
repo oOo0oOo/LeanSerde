@@ -7,13 +7,16 @@ import Tests.MetaTests
 
 open LeanSerial
 
-def runTestSuite (suiteName : String) (tests : IO Unit) : IO Bool := do
+def runTestSuite (suiteName : String) (tests : IO Bool) : IO Bool := do
   IO.println ""
   IO.println s!"═══ Running {suiteName} ═══"
   try
-    tests
-    IO.println s!"✓ {suiteName} completed"
-    return true
+    let success ← tests
+    if success then
+      IO.println s!"✓ {suiteName} completed"
+    else
+      IO.println s!"✗ {suiteName} failed"
+    return success
   catch e =>
     IO.println s!"✗ {suiteName} failed: {e}"
     return false

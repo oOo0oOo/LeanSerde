@@ -51,10 +51,10 @@ def test_roundtrip {α} [Serializable α] [BEq α] (testName: String) (value : �
     let fileValue : Except String α ← LeanSerial.deserializeFromJsonFile filePath
     match fileValue with
     | .error e =>
-      return TestResult.failure testName s!"Failed to deserialize from file: {e}"
+      return TestResult.failure testName s!"Failed to deserialize from JSON file: {e}"
     | .ok deserializedValue =>
       if !(value == deserializedValue) then
-        return TestResult.failure testName "Value mismatch after file roundtrip"
+        return TestResult.failure testName "Value mismatch after file JSON roundtrip"
 
     -- Test to/from file CBOR
     LeanSerial.serializeToFile value filePath
@@ -74,7 +74,7 @@ def test_roundtrip {α} [Serializable α] [BEq α] (testName: String) (value : �
     return TestResult.failure testName s!"Exception: {e}"
 
 
-def runTests (suiteName : String) (tests : List (IO TestResult)) : IO Unit := do
+def runTests (suiteName : String) (tests : List (IO TestResult)) : IO Bool := do
   IO.println s!"Running {suiteName}..."
   let results ← tests.mapM id
 
@@ -89,5 +89,7 @@ def runTests (suiteName : String) (tests : List (IO TestResult)) : IO Unit := do
     IO.println s!"  ✗ {result.name}: {errorMsg}"
 
   IO.println s!"  {passed.length}/{results.length} tests passed"
+
+  return failed.isEmpty
 
 end TestFramework

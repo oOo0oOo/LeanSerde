@@ -51,7 +51,7 @@ def test_deeply_nested_structure : IO TestResult := do
   let testData4 := TestData4.mk testData3 (none : Option (String × Nat))
   test_roundtrip "Deeply Nested Structure" testData4
 
-def run : IO Unit := do
+def run: IO Bool := do
   runTests "Structure Serialization" [
     test_simple_structure,
     test_nested_structure,
@@ -136,7 +136,7 @@ def test_recursive_inductive2 : IO TestResult := do
   let value8 := TestInductive7.case4 value7 [value6] value5
   test_roundtrip "Recursive Inductive 2" value8
 
-def run : IO Unit := do
+def run: IO Bool := do
   runTests "Inductive Type Serialization" [
     test_simple_inductive,
     test_multi_constructor_inductive,

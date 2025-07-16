@@ -97,16 +97,28 @@ def test_persistent_hashmap : IO Unit := do
   else
     IO.println s!"  ✗ PersistentHashMap: {result.error.getD "Unknown error"}"
 
-def run : IO Unit := do
-  runTests "Standard Library Types" [
-    test_roundtrip "JSON Object" (Lean.Json.mkObj [("key", Lean.Json.str "value")]),
-    test_roundtrip "JSON Complex" (Lean.Json.arr #[Lean.Json.str "value1", Lean.Json.str "value2", Lean.Json.num 42, Lean.Json.bool true, Lean.Json.null]),
-    test_roundtrip "Position" (Lean.Position.mk 1 2)
-  ]
+def run: IO Bool := do
+  let results ← [
+    runTests "Standard Library Types" [
+      test_roundtrip "JSON Object" (Lean.Json.mkObj [("key", Lean.Json.str "value")]),
+      test_roundtrip "JSON Complex" (Lean.Json.arr #[Lean.Json.str "value1", Lean.Json.str "value2", Lean.Json.num 42, Lean.Json.bool true, Lean.Json.null]),
+      test_roundtrip "Position" (Lean.Position.mk 1 2)
+    ],
 
-  test_hashmap
-  test_hashset
-  test_rbmap
-  test_persistent_hashmap
+    runTests "HashMap/HashSet" [
+      test_hashmap_impl,
+      test_hashset_impl
+    ],
+
+    runTests "Red-Black Trees" [
+      test_rbmap_impl
+    ],
+
+    runTests "Persistent Collections" [
+      test_persistent_hashmap_impl
+    ]
+  ].mapM id
+
+  return results.all (· == true)
 
 end LibraryTests
