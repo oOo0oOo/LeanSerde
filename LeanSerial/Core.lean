@@ -2,10 +2,6 @@ import Lean.Data.Json
 
 namespace LeanSerial
 
-inductive SerializationFormat where
-  | ByteArray | Json | String
-  deriving Repr, BEq, Inhabited
-
 inductive SerialValue where
   | str : String → SerialValue
   | nat : Nat → SerialValue
@@ -20,32 +16,21 @@ def toJson : SerialValue → Lean.Json
   | .nat n => .num n
   | .bool b => .bool b
   | .compound name children =>
-    .mkObj [("type", .str name), ("args", .arr (children.map toJson))]
+    .arr #[.str name, .arr (children.map toJson)]
 
 partial def fromJson : Lean.Json → Except String SerialValue
-  | Lean.Json.str s => pure (SerialValue.str s)
-  | Lean.Json.num n =>
-    match n.mantissa, n.exponent with
-    | m, 0 => if m >= 0 then pure (SerialValue.nat m.natAbs) else throw s!"Expected natural number, got negative {m}"
-    | _, _ => throw s!"Expected integer, got decimal {n}"
-  | Lean.Json.bool b => pure (SerialValue.bool b)
-  | Lean.Json.obj o => do
-    let fields := o.fold (fun acc k v => (k, v) :: acc) []
-
-    let typeName ← match fields.find? (fun (k, _) => k == "type") with
-      | some (_, Lean.Json.str s) => pure s
-      | some (_, _) => throw "Expected string value for 'type' field"
-      | none => throw "Missing 'type' field in compound object"
-
-    let argsJson ← match fields.find? (fun (k, _) => k == "args") with
-      | some (_, argsJson) => pure argsJson
-      | none => throw "Missing 'args' field in compound object"
-
-    let args ← match argsJson with
-      | Lean.Json.arr arr => arr.mapM fromJson
-      | _ => throw "Expected JSON array"
-    pure (SerialValue.compound typeName args)
-  | _ => throw "Invalid JSON structure for SerialValue."
+  | .str s => .ok (.str s)
+  | .num n =>
+    if n.exponent == 0 && n.mantissa >= 0 then
+      .ok (.nat n.mantissa.natAbs)
+    else
+      .error s!"Expected natural number, got {n}"
+  | .bool b => .ok (.bool b)
+  | .arr #[.str name, .arr children] => do
+    let args ← children.mapM fromJson
+    .ok (.compound name args)
+  | .arr arr => .error s!"Expected [name, args], got array of size {arr.size}"
+  | _ => .error "Invalid SerialValue JSON"
 
 instance : Lean.ToJson SerialValue := ⟨toJson⟩
 instance : Lean.FromJson SerialValue := ⟨fromJson⟩

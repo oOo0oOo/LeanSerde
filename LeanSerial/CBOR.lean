@@ -13,12 +13,23 @@ def MajorType.toByte : MajorType → UInt8
   | .array => 0x80        | .map => 0xA0
   | .tag => 0xC0          | .simple => 0xE0
 
+def MajorType.fromByte (b : UInt8) : Option MajorType :=
+  match b / 32 with
+  | 0 => some .unsignedInt | 1 => some .negativeInt
+  | 2 => some .byteString  | 3 => some .textString
+  | 4 => some .array       | 5 => some .map
+  | 6 => some .tag         | 7 => some .simple
+  | _ => none
+
 inductive SimpleValue : Type where
   | false | true | null
   deriving BEq, Repr
 
 def SimpleValue.toByte : SimpleValue → UInt8
   | .false => 20  | .true => 21  | .null => 22
+
+def natToBytesBE (n : Nat) (bytes : Nat) : Array UInt8 :=
+  Array.range bytes |>.map (fun i => ((n >>> ((bytes - 1 - i) * 8)) % 256).toUInt8)
 
 def encodeLength (majorType : MajorType) (length : Nat) : ByteArray :=
   let base := majorType.toByte
@@ -27,28 +38,16 @@ def encodeLength (majorType : MajorType) (length : Nat) : ByteArray :=
   else if length < 256 then
     ⟨#[base + 24, length.toUInt8]⟩
   else if length < 65536 then
-    let high := (length / 256).toUInt8
-    let low := (length % 256).toUInt8
-    ⟨#[base + 25, high, low]⟩
+    ⟨#[base + 25] ++ natToBytesBE length 2⟩
   else if length < 4294967296 then
-    let b3 := (length / 16777216).toUInt8
-    let b2 := ((length / 65536) % 256).toUInt8
-    let b1 := ((length / 256) % 256).toUInt8
-    let b0 := (length % 256).toUInt8
-    ⟨#[base + 26, b3, b2, b1, b0]⟩
+    ⟨#[base + 26] ++ natToBytesBE length 4⟩
   else
-    let b7 := (length / 72057594037927936).toUInt8
-    let b6 := ((length / 281474976710656) % 256).toUInt8
-    let b5 := ((length / 1099511627776) % 256).toUInt8
-    let b4 := ((length / 4294967296) % 256).toUInt8
-    let b3 := ((length / 16777216) % 256).toUInt8
-    let b2 := ((length / 65536) % 256).toUInt8
-    let b1 := ((length / 256) % 256).toUInt8
-    let b0 := (length % 256).toUInt8
-    ⟨#[base + 27, b7, b6, b5, b4, b3, b2, b1, b0]⟩
+    ⟨#[base + 27] ++ natToBytesBE length 8⟩
 
+-- Encoding functions
 def encodeUnsignedInt : Nat → ByteArray := encodeLength .unsignedInt
-def encodeBool : Bool → ByteArray := fun b =>
+
+def encodeBool (b : Bool) : ByteArray :=
   ⟨#[MajorType.simple.toByte + (if b then SimpleValue.true else SimpleValue.false).toByte]⟩
 
 def encodeTextString (s : String) : ByteArray :=
@@ -65,6 +64,7 @@ partial def encodeSerialValue : SerialValue → ByteArray
   | .compound name children =>
     encodeArray (#[encodeTextString name] ++ children.map encodeSerialValue)
 
+-- Decoding state and helpers
 structure DecodeState where
   data : ByteArray
   pos : Nat
@@ -79,6 +79,9 @@ def DecodeState.consume (s : DecodeState) (n : Nat) : Option (ByteArray × Decod
 def DecodeState.consumeByte (s : DecodeState) : Option (UInt8 × DecodeState) :=
   s.consume 1 |>.map (fun (bytes, s') => (bytes[0]!, s'))
 
+def bytesToNatBE (bytes : ByteArray) : Nat :=
+  bytes.foldl (fun acc b => acc * 256 + b.toNat) 0
+
 def decodeLength (s : DecodeState) : Option (Nat × DecodeState) := do
   let (firstByte, s') ← s.consumeByte
   let additionalInfo := firstByte.toNat % 32
@@ -89,30 +92,15 @@ def decodeLength (s : DecodeState) : Option (Nat × DecodeState) := do
     some (b.toNat, s'')
   else if additionalInfo == 25 then do
     let (bytes, s'') ← s'.consume 2
-    let n := bytes[0]!.toNat * 256 + bytes[1]!.toNat
-    some (n, s'')
+    some (bytesToNatBE bytes, s'')
   else if additionalInfo == 26 then do
     let (bytes, s'') ← s'.consume 4
-    let n := bytes[0]!.toNat * 16777216 + bytes[1]!.toNat * 65536 +
-             bytes[2]!.toNat * 256 + bytes[3]!.toNat
-    some (n, s'')
+    some (bytesToNatBE bytes, s'')
   else if additionalInfo == 27 then do
     let (bytes, s'') ← s'.consume 8
-    let n := bytes[0]!.toNat * 72057594037927936 + bytes[1]!.toNat * 281474976710656 +
-             bytes[2]!.toNat * 1099511627776 + bytes[3]!.toNat * 4294967296 +
-             bytes[4]!.toNat * 16777216 + bytes[5]!.toNat * 65536 +
-             bytes[6]!.toNat * 256 + bytes[7]!.toNat
-    some (n, s'')
+    some (bytesToNatBE bytes, s'')
   else
     none
-
-def MajorType.fromByte (b : UInt8) : Option MajorType :=
-  match b / 32 with
-  | 0 => some .unsignedInt | 1 => some .negativeInt
-  | 2 => some .byteString  | 3 => some .textString
-  | 4 => some .array       | 5 => some .map
-  | 6 => some .tag         | 7 => some .simple
-  | _ => none
 
 partial def decodeSerialValue (s : DecodeState) : Option (SerialValue × DecodeState) := do
   let (firstByte, s') ← s.consumeByte
@@ -153,7 +141,8 @@ partial def decodeSerialValue (s : DecodeState) : Option (SerialValue × DecodeS
 where
   decodeArrayElements (remaining : Nat) (acc : Array SerialValue) (state : DecodeState)
     : Option (Array SerialValue × DecodeState) :=
-    if remaining == 0 then some (acc, state)
+    if remaining == 0 then
+      some (acc, state)
     else do
       let (val, newState) ← decodeSerialValue state
       decodeArrayElements (remaining - 1) (acc.push val) newState
@@ -162,8 +151,8 @@ def encodeToCBOR : SerialValue → ByteArray := encodeSerialValue
 
 def decodeFromCBOR (bytes : ByteArray) : Except String SerialValue :=
   match decodeSerialValue ⟨bytes, 0⟩ with
-  | some (val, _) => Except.ok val
-  | none => Except.error "Failed to decode CBOR data"
+  | some (val, _) => .ok val
+  | none => .error "Failed to decode CBOR data"
 
 instance : SerializableFormat ByteArray where
   serializeValue := encodeToCBOR
