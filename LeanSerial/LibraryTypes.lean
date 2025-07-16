@@ -3,10 +3,12 @@ import Std.Data.HashSet
 import Lean.Data.Json
 import Lean.Data.Position
 import Lean.Data.RBMap
+import Lean.Data.RBTree
 import Lean.Data.PersistentHashMap
 import Lean.Data.PersistentArray
--- import Std.Fo
+
 import LeanSerial.PrimitiveTypes
+import LeanSerial.ContainerTypes
 import LeanSerial.Derive
 
 namespace LeanSerial
@@ -124,5 +126,13 @@ instance : Serializable Std.Format.FlattenBehavior where
     | .compound "FlattenBehavior.allOrNone" #[] => .ok Std.Format.FlattenBehavior.allOrNone
     | .compound "FlattenBehavior.fill" #[] => .ok Std.Format.FlattenBehavior.fill
     | _ => .error s!"Expected FlattenBehavior compound, got {repr sv}"
+
+-- RBTree
+instance {k : Type} [Serializable k] {cmp : k → k → Ordering} : Serializable (Lean.RBTree k cmp) where
+  encode t := .compound "RBTree" (t.toList.map encode |>.toArray)
+  decode sv := do
+    let args ← decodeCompound "RBTree" sv
+    let elems ← args.mapM decode |>.mapError (·)
+    .ok (elems.toList.foldl (init := Lean.RBTree.empty) (fun acc elem => acc.insert elem))
 
 end LeanSerial

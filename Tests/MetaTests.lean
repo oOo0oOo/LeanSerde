@@ -56,20 +56,6 @@ def real_life_expr : IO TestResult := do
   let finalExpr := Expr.app secondApp natRefl
   test_roundtrip "Real-Life Expr" finalExpr
 
--- -- Towards LocalContext
--- run_cmd mkSerializableInstance `Lean.LocalDeclKind
--- run_cmd mkSerializableInstance `Lean.LocalDecl
-
--- instance {α : Type} [Serializable α] : Serializable (Lean.FVarIdMap α) :=
---   inferInstanceAs (Serializable (Lean.RBMap Lean.FVarId α (Name.quickCmp ·.name ·.name)))
-
--- run_cmd mkSerializableInstance `Lean.LocalContext
--- run_cmd mkSerializableInstance `Lean.MetavarKind
--- run_cmd mkSerializableInstance `Lean.LocalInstance
--- run_cmd mkSerializableInstance `Lean.MetavarDecl
--- run_cmd mkSerializableInstance `Lean.DelayedMetavarAssignment
--- run_cmd mkSerializableInstance `Lean.MetavarContext
-
 def test_local_decl_kind : IO TestResult := do
   let kind := Lean.LocalDeclKind.default
   test_roundtrip "LocalDeclKind" kind

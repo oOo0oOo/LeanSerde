@@ -299,6 +299,84 @@ instance : Serializable Lean.Elab.InfoTree where
   encode := encodeInfoTree
   decode := decodeInfoTree
 
+-- Towards Tactic.SavedState
+instance {α : Type} [Serializable α] : Serializable (Lean.MVarIdMap α) :=
+  inferInstanceAs (Serializable (Lean.RBMap Lean.MVarId α (Name.quickCmp ·.name ·.name)))
+
+instance : Serializable Lean.FVarIdSet :=
+  inferInstanceAs (Serializable (Lean.RBTree Lean.FVarId (Name.quickCmp ·.name ·.name)))
+
+instance : Serializable Lean.MVarIdSet :=
+  inferInstanceAs (Serializable (Lean.RBTree Lean.MVarId (Name.quickCmp ·.name ·.name)))
+
+instance {ks : SyntaxNodeKinds} : Serializable (TSyntax ks) where
+  encode t := encode t.raw
+  decode sv := do
+    let syn ← decode sv
+    .ok ⟨syn⟩
+
+instance {ks : SyntaxNodeKinds} : Serializable (TSyntaxArray ks) :=
+  inferInstanceAs (Serializable (Array (TSyntax ks)))
+
+-- run_cmd mkSerializableInstance `Lean.Format
+-- run_cmd mkSerializableInstance `Lean.Message
+-- run_cmd mkSerializableInstance `Lean.IO.Ref
+-- run_cmd mkSerializableInstance `Lean.Meta.FunInfoCache
+-- run_cmd mkSerializableInstance `Lean.Meta.InferTypeCache
+-- run_cmd mkSerializableInstance `Lean.Meta.SynthInstanceCache
+-- run_cmd mkSerializableInstance `Lean.Elab.MacroStack
+-- run_cmd mkSerializableInstance `Lean.Term
+
+-- run_cmd mkSerializableInstance `Lean.Elab.PartialFixpoint.PartialFixpointType
+-- run_cmd mkSerializableInstance `Lean.Elab.PartialFixpoint.EqnInfo
+-- run_cmd mkSerializableInstance `Lean.Elab.PartialFixpoint.FixedParamPerm
+-- run_cmd mkSerializableInstance `Lean.Elab.PartialFixpoint.FixedParamPerms
+-- run_cmd mkSerializableInstance `Lean.Elab.PartialFixpoint
+
+-- run_cmd mkSerializableInstance `Lean.Elab.DecreasingBy
+-- run_cmd mkSerializableInstance `Lean.Elab.TerminationBy
+-- run_cmd mkSerializableInstance `Lean.AttributeKind
+-- run_cmd mkSerializableInstance `Lean.TraceData
+-- run_cmd mkSerializableInstance `Lean.NamingContext
+-- run_cmd mkSerializableInstance `Lean.Meta.DefEqContext
+-- run_cmd mkSerializableInstance `Lean.Elab.TerminationHints
+-- run_cmd mkSerializableInstance `Lean.Elab.Attribute
+-- run_cmd mkSerializableInstance `Lean.FormatWithInfos
+-- run_cmd mkSerializableInstance `Lean.MessageDataContext
+-- run_cmd mkSerializableInstance `Lean.MessageData
+-- run_cmd mkSerializableInstance `Lean.Elab.Term.MVarErrorKind
+-- run_cmd mkSerializableInstance `Lean.TraceElem
+-- run_cmd mkSerializableInstance `Lean.Elab.Term.TacticMVarKind
+-- run_cmd mkSerializableInstance `Lean.Elab.Term.SavedContext
+-- run_cmd mkSerializableInstance `Lean.Meta.Diagnostics
+-- run_cmd mkSerializableInstance `Lean.MessageLog
+-- run_cmd mkSerializableInstance `Lean.Meta.PostponedEntry
+-- run_cmd mkSerializableInstance `Lean.Meta.Cache
+-- run_cmd mkSerializableInstance `Lean.TraceState
+-- run_cmd mkSerializableInstance `Lean.Language.Snapshot.Diagnostics
+-- run_cmd mkSerializableInstance `Lean.Language.Snapshot
+-- run_cmd mkSerializableInstance `Lean.Language.SnapshotTree
+-- run_cmd mkSerializableInstance `Lean.Language.SnapshotTask
+-- run_cmd mkSerializableInstance `Lean.Elab.InfoState
+-- run_cmd mkSerializableInstance `Lean.Core.Cache
+-- run_cmd mkSerializableInstance `Lean.Elab.Term.LetRecToLift
+-- run_cmd mkSerializableInstance `Lean.Elab.Term.LevelMVarErrorInfo
+-- run_cmd mkSerializableInstance `Lean.Elab.Term.MVarErrorInfo
+-- run_cmd mkSerializableInstance `Lean.Elab.Term.SyntheticMVarKind
+-- run_cmd mkSerializableInstance `Lean.Elab.Term.SyntheticMVarDecl
+-- run_cmd mkSerializableInstance `Lean.DeclNameGenerator
+-- run_cmd mkSerializableInstance `Lean.Meta.State
+-- run_cmd mkSerializableInstance `Lean.Core.State
+-- run_cmd mkSerializableInstance `Lean.Core.SavedState
+-- run_cmd mkSerializableInstance `Lean.Elab.Term.State
+-- run_cmd mkSerializableInstance `Lean.Meta.SavedState
+-- run_cmd mkSerializableInstance `Lean.Elab.Tactic.State
+-- run_cmd mkSerializableInstance `Lean.Elab.Term.SavedState
+-- run_cmd mkSerializableInstance `Lean.Elab.Tactic.SavedState
+
+
+-- run_cmd mkSerializableInstance `Lean.Meta.Goal
+
 -- Various
 run_cmd mkSerializableInstance `Lean.Widget.UserWidgetDefinition
 
