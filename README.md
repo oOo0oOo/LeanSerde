@@ -6,9 +6,9 @@
 
 <p align="center">
   <a href="https://github.com/leanprover/lean4/releases/tag/v4.21.0">
-    <img src="https://img.shields.io/badge/Lean-v4.21.0-blue" alt="license" />
+    <img src="https://img.shields.io/badge/Lean-v4.21.0-blue" alt="Lean version" />
   </a>
-  <a href="https://github.com/oOo0oOo/LeanSerial/blob/master/LICENSE">
+  <a href="https://github.com/oOo0oOo/LeanSerial/blob/main/LICENSE">
     <img src="https://img.shields.io/github/license/oOo0oOo/LeanSerial.svg" alt="license" />
   </a>
 </p>
@@ -147,7 +147,8 @@ instance [Serializable α] : Serializable (MyArray α) where
   encode xs := .compound "MyArray" (xs.map encode)
   decode sv := do
     let args ← decodeCompound "MyArray" sv
-    args.mapM decode |>.mapError (·)
+    let decoded ← args.mapM decode
+    return decoded
 ```
 
 ## Testing
