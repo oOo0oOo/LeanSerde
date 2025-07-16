@@ -150,6 +150,14 @@ instance [Serializable α] : Serializable (MyArray α) where
     args.mapM decode |>.mapError (·)
 ```
 
+## Testing
+
+Clone the repository and run:
+
+```bash
+lake test
+```
+
 ## License
 
 MIT
