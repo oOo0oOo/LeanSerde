@@ -320,7 +320,7 @@ instance {ks : SyntaxNodeKinds} : Serializable (TSyntaxArray ks) :=
 
 -- run_cmd mkSerializableInstance `Lean.Format
 -- run_cmd mkSerializableInstance `Lean.Message
--- run_cmd mkSerializableInstance `Lean.IO.Ref
+-- run_cmd mkSerializableInstance `IO.Ref
 -- run_cmd mkSerializableInstance `Lean.Meta.FunInfoCache
 -- run_cmd mkSerializableInstance `Lean.Meta.InferTypeCache
 -- run_cmd mkSerializableInstance `Lean.Meta.SynthInstanceCache
@@ -373,9 +373,6 @@ instance {ks : SyntaxNodeKinds} : Serializable (TSyntaxArray ks) :=
 -- run_cmd mkSerializableInstance `Lean.Elab.Tactic.State
 -- run_cmd mkSerializableInstance `Lean.Elab.Term.SavedState
 -- run_cmd mkSerializableInstance `Lean.Elab.Tactic.SavedState
-
-
--- run_cmd mkSerializableInstance `Lean.Meta.Goal
 
 -- Various
 run_cmd mkSerializableInstance `Lean.Widget.UserWidgetDefinition

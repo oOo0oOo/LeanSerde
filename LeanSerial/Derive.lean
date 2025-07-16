@@ -163,22 +163,27 @@ private def mkSerializableQuotation (typeId : TSyntax `ident) (constructorData :
 
 def mkSerializableInstance (typeName : Name) : CommandElabM Unit := do
   let env ← getEnv
-  let some (ConstantInfo.inductInfo inductVal) := env.find? typeName
-    | throwError s!"Type {typeName} is not an inductive type"
 
-  let typeId := mkIdent typeName
-  let constructorInfosArray ← inductVal.ctors.toArray.mapM fun ctorName => do
-    let some (ConstantInfo.ctorInfo ctorVal) := env.find? ctorName
-      | throwError s!"constructor {ctorName} not found"
-    return ctorVal
+  let some constInfo := env.find? typeName
+    | throwError s!"Type {typeName} not found in environment. Make sure the type is properly imported and defined."
 
-  if constructorInfosArray.isEmpty then
-    throwError "Empty inductive type"
+  match constInfo with
+  | ConstantInfo.inductInfo inductVal =>
+    let typeId := mkIdent typeName
+    let constructorInfosArray ← inductVal.ctors.toArray.mapM fun ctorName => do
+      let some (ConstantInfo.ctorInfo ctorVal) := env.find? ctorName
+        | throwError s!"Constructor {ctorName} not found for inductive type {typeName}. This is likely an internal error."
+      return ctorVal
 
-  let constructorData ← constructorInfosArray.mapM (mkConstructorData typeId inductVal)
-  let cmds ← mkSerializableQuotation typeId constructorData constructorInfosArray inductVal.isRec
+    if constructorInfosArray.isEmpty then
+      throwError s!"Inductive type {typeName} has no constructors. Empty inductive types cannot be serialized."
 
-  cmds.forM elabCommand
+    let constructorData ← constructorInfosArray.mapM (mkConstructorData typeId inductVal)
+    let cmds ← mkSerializableQuotation typeId constructorData constructorInfosArray inductVal.isRec
+
+    cmds.forM elabCommand
+  | _ =>
+    throwError s!"Type {typeName} is not an inductive type. Serializable instances can only be created for inductive types."
 
 initialize
   registerDerivingHandler ``LeanSerial.Serializable fun declNames => do
