@@ -23,6 +23,16 @@ private def generateContainerEncode (fieldType : Expr) (fieldTerm : TSyntax `ter
     `(LeanSerial.SerialValue.compound "List" (($fieldTerm).map $encodeFnName:ident |>.toArray))
   | .app (.const `Array _) _ =>
     `(LeanSerial.SerialValue.compound "Array" (($fieldTerm).map $encodeFnName:ident))
+  | .app (.const `Option _) _ =>
+    `(Option.casesOn $fieldTerm
+        (LeanSerial.SerialValue.compound "Option" #[LeanSerial.SerialValue.str "none"])
+        (fun x => LeanSerial.SerialValue.compound "Option" #[LeanSerial.SerialValue.str "some", $encodeFnName:ident x]))
+  | .app (.app (.const `Prod _) _) _ =>
+    `(LeanSerial.SerialValue.compound "Prod" #[$encodeFnName:ident ($fieldTerm).fst, $encodeFnName:ident ($fieldTerm).snd])
+  | .app (.app (.const `Sum _) _) _ =>
+    `(Sum.casesOn $fieldTerm
+        (fun x => LeanSerial.SerialValue.compound "Sum" #[LeanSerial.SerialValue.str "inl", $encodeFnName:ident x])
+        (fun x => LeanSerial.SerialValue.compound "Sum" #[LeanSerial.SerialValue.str "inr", $encodeFnName:ident x]))
   | _ => throwError "Invalid container type"
 
 private def generateContainerDecode (fieldType : Expr) (fieldId : Ident) (index : Nat) (decodeFnName : Ident) : CommandElabM (List (TSyntax `doElem)) := do
@@ -37,6 +47,45 @@ private def generateContainerDecode (fieldType : Expr) (fieldId : Ident) (index 
       ← `(doElem| let containerSv := args[$(quote index)]!),
       ← `(doElem| let containerArgs ← LeanSerial.decodeCompound "Array" containerSv),
       ← `(doElem| let $fieldId ← containerArgs.mapM $decodeFnName:ident)
+    ]
+  | .app (.const `Option _) _ => pure [
+      ← `(doElem| let containerSv := args[$(quote index)]!),
+      ← `(doElem| let containerArgs ← LeanSerial.decodeCompound "Option" containerSv),
+      ← `(doElem| let $fieldId ← do
+        if containerArgs.size == 1 && containerArgs[0]! == LeanSerial.SerialValue.str "none" then
+          return .none
+        else if containerArgs.size == 2 && containerArgs[0]! == LeanSerial.SerialValue.str "some" then do
+          let val ← $decodeFnName:ident containerArgs[1]!
+          return (.some val)
+        else
+          throw "Invalid Option format")
+    ]
+  | .app (.app (.const `Prod _) _) _ => pure [
+      ← `(doElem| let containerSv := args[$(quote index)]!),
+      ← `(doElem| let containerArgs ← LeanSerial.decodeCompound "Prod" containerSv),
+      ← `(doElem| let $fieldId ← do
+        if containerArgs.size == 2 then do
+          let fst ← $decodeFnName:ident containerArgs[0]!
+          let snd ← $decodeFnName:ident containerArgs[1]!
+          return (fst, snd)
+        else
+          throw "Invalid Prod format")
+    ]
+  | .app (.app (.const `Sum _) _) _ => pure [
+      ← `(doElem| let containerSv := args[$(quote index)]!),
+      ← `(doElem| let containerArgs ← LeanSerial.decodeCompound "Sum" containerSv),
+      ← `(doElem| let $fieldId ← do
+        if containerArgs.size == 2 then
+          if containerArgs[0]! == LeanSerial.SerialValue.str "inl" then do
+            let val ← $decodeFnName:ident containerArgs[1]!
+            return (.inl val)
+          else if containerArgs[0]! == LeanSerial.SerialValue.str "inr" then do
+            let val ← $decodeFnName:ident containerArgs[1]!
+            return (.inr val)
+          else
+            throw "Invalid Sum tag"
+        else
+          throw "Invalid Sum format")
     ]
   | _ => throwError "Invalid container type"
 
@@ -88,7 +137,9 @@ private def mkConstructorData (typeId : TSyntax `ident) (inductVal : InductiveVa
     let isDirectRecursive := fieldType.isAppOf inductVal.name
     let isSimpleContainer := match fieldType with
       | .app (.const name _) inner =>
-        (name == `List || name == `Array) && inner.isAppOf inductVal.name
+        (name == `List || name == `Array || name == `Option) && inner.isAppOf inductVal.name
+      | .app (.app (.const name _) _) inner =>
+        (name == `Prod || name == `Sum) && inner.isAppOf inductVal.name
       | _ => false
 
     let encodeElem ← if isDirectRecursive then

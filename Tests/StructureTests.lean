@@ -105,6 +105,15 @@ inductive TestInductive7
 | case4 : TestInductive7 → List TestInductive6 → TestInductive5 → TestInductive7
 deriving LeanSerial.Serializable, BEq
 
+structure TestContainers where
+  optionalValue : Option String
+  pair : Nat × String
+  choice : String ⊕ Nat
+  listOfOptions : List (Option Nat)
+  arrayOfPairs : Array (Nat × Bool)
+  optionalPair : Option (String × Nat)
+  deriving LeanSerial.Serializable, BEq
+
 def test_simple_inductive : IO TestResult := do
   let value := TestInductive.none
   test_roundtrip "Simple Inductive" value
@@ -136,6 +145,26 @@ def test_recursive_inductive2 : IO TestResult := do
   let value8 := TestInductive7.case4 value7 [value6] value5
   test_roundtrip "Recursive Inductive 2" value8
 
+def test_container_types : IO TestResult := do
+  let testData := TestContainers.mk
+    (some "hello")
+    (42, "world")
+    (Sum.inl "left")
+    [some 1, none, some 3]
+    #[(1, true), (2, false)]
+    (some ("test", 100))
+  test_roundtrip "Container Types" testData
+
+def test_container_types_with_nones : IO TestResult := do
+  let testData := TestContainers.mk
+    none
+    (0, "empty")
+    (Sum.inr 42)
+    [none, none, some 5]
+    #[]
+    none
+  test_roundtrip "Container Types with Nones" testData
+
 def run: IO Bool := do
   runTests "Inductive Type Serialization" [
     test_simple_inductive,
@@ -144,7 +173,9 @@ def run: IO Bool := do
     test_multiple_cases_inductive,
     test_recursive_inductive,
     test_mutually_recursive_inductive,
-    test_recursive_inductive2
+    test_recursive_inductive2,
+    test_container_types,
+    test_container_types_with_nones
   ]
 
 end InductiveTests
