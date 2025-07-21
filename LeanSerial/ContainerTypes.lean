@@ -4,12 +4,7 @@ import LeanSerial.Derive
 
 namespace LeanSerial
 
-run_cmd mkSerializableInstance `Prod
-run_cmd mkSerializableInstance `Sum
-run_cmd mkSerializableInstance `Option
-run_cmd mkSerializableInstance `Except
-run_cmd mkSerializableInstance `List
-run_cmd mkSerializableInstance `Array
+deriving instance LeanSerial.Serializable for Prod, Sum, Option, Except, List, Array
 
 -- Subarray
 instance [Serializable α] : Serializable (Subarray α) where

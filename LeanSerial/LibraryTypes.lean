@@ -50,20 +50,7 @@ instance : Serializable Lean.Json where
     | other =>
       .error s!"Expected Json compound, got {repr other}"
 
--- Lean.Position
-instance : Serializable Lean.Position where
-  encode (pos : Lean.Position) := .compound "Position" #[.nat pos.line, .nat pos.column]
-  decode sv := do
-    match sv with
-    | .compound "Position" #[.nat line, .nat col] =>
-      if line < 0 || col < 0 then
-        .error s!"Invalid Position: line {line}, col {col}"
-      else
-        .ok (Lean.Position.mk line col)
-    | .compound "Position" args =>
-      .error s!"Position expects 2 args, got {args.size}"
-    | other =>
-      .error s!"Expected Position compound, got {repr other}"
+deriving instance LeanSerial.Serializable for Lean.Position
 
 -- Lean.RBMap
 instance {k v : Type} [Serializable k] [Serializable v] {cmp : k → k → Ordering} : Serializable (Lean.RBMap k v cmp) where
@@ -117,15 +104,7 @@ instance : Serializable Lean.Position where
       .error s!"Expected Position compound, got {repr other}"
 
 -- Basic Format support
-instance : Serializable Std.Format.FlattenBehavior where
-  encode fb := match fb with
-    | .allOrNone => .compound "FlattenBehavior.allOrNone" #[]
-    | .fill => .compound "FlattenBehavior.fill" #[]
-  decode sv := do
-    match sv with
-    | .compound "FlattenBehavior.allOrNone" #[] => .ok Std.Format.FlattenBehavior.allOrNone
-    | .compound "FlattenBehavior.fill" #[] => .ok Std.Format.FlattenBehavior.fill
-    | _ => .error s!"Expected FlattenBehavior compound, got {repr sv}"
+deriving instance LeanSerial.Serializable for Std.Format.FlattenBehavior
 
 -- RBTree
 instance {k : Type} [Serializable k] {cmp : k → k → Ordering} : Serializable (Lean.RBTree k cmp) where
