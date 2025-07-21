@@ -40,6 +40,22 @@ private def generateContainerDecode (fieldType : Expr) (fieldId : Ident) (index 
     ]
   | _ => throwError "Invalid container type"
 
+private def extractTypeParameters (inductVal : InductiveVal) : CommandElabM (Array Name) := do
+  if inductVal.numParams = 0 then
+    return #[]
+
+  let firstCtorName := inductVal.ctors[0]!
+  let ctorInfo ← getConstInfoCtor firstCtorName
+
+  liftTermElabM do
+    forallTelescopeReducing ctorInfo.type fun xs _ => do
+      let mut typeParams : Array Name := #[]
+      for i in [:inductVal.numParams] do
+        let x := xs[i]!
+        let localDecl ← x.fvarId!.getDecl
+        typeParams := typeParams.push localDecl.userName
+      return typeParams
+
 private def mkConstructorData (typeId : TSyntax `ident) (inductVal : InductiveVal) (ctor : ConstructorVal) : CommandElabM ConstructorData := do
   let ctorId := mkIdent ctor.name
 
@@ -111,7 +127,7 @@ private def mkConstructorData (typeId : TSyntax `ident) (inductVal : InductiveVa
     decodeStmts := decodeStmts
   }
 
-private def mkSerializableQuotation (typeId : TSyntax `ident) (constructorData : Array ConstructorData) (constructorInfos : Array ConstructorVal) (isRecursive : Bool) : CommandElabM (Array (TSyntax `command)) := do
+private def mkSerializableQuotation (typeId : TSyntax `ident) (constructorData : Array ConstructorData) (constructorInfos : Array ConstructorVal) (isRecursive : Bool) (typeParams : Array Name) : CommandElabM (Array (TSyntax `command)) := do
   let encodeMatches := constructorData.map fun cd =>
     (cd.encodePattern, cd.encodeElems, cd.name)
 
@@ -133,31 +149,69 @@ private def mkSerializableQuotation (typeId : TSyntax `ident) (constructorData :
   let encodeFnName := mkAuxFunctionName "encode" typeId
   let decodeFnName := mkAuxFunctionName "decode" typeId
 
-  let encodeDef ← if isRecursive then
-    `(partial def $encodeFnName (v : $typeId) : LeanSerial.SerialValue :=
-        match v with
-        $[| $encodePatterns => $encodeArms]*)
+  let polyTypeApp ← if typeParams.isEmpty then
+    pure ⟨typeId⟩
   else
-    `(def $encodeFnName (v : $typeId) : LeanSerial.SerialValue :=
-        match v with
-        $[| $encodePatterns => $encodeArms]*)
+    let paramIds := typeParams.map mkIdent
+    `($typeId $paramIds*)
+  let instConstraints ← typeParams.mapM fun param => do
+    let paramId := mkIdent param
+    `(bracketedBinder| [LeanSerial.Serializable $paramId])
+
+  let encodeDef ← if isRecursive then
+    if typeParams.isEmpty then
+      `(partial def $encodeFnName (v : $typeId) : LeanSerial.SerialValue :=
+          match v with
+          $[| $encodePatterns => $encodeArms]*)
+    else
+      `(partial def $encodeFnName $instConstraints:bracketedBinder* (v : $polyTypeApp) : LeanSerial.SerialValue :=
+          match v with
+          $[| $encodePatterns => $encodeArms]*)
+  else
+    if typeParams.isEmpty then
+      `(def $encodeFnName (v : $typeId) : LeanSerial.SerialValue :=
+          match v with
+          $[| $encodePatterns => $encodeArms]*)
+    else
+      `(def $encodeFnName $instConstraints:bracketedBinder* (v : $polyTypeApp) : LeanSerial.SerialValue :=
+          match v with
+          $[| $encodePatterns => $encodeArms]*)
 
   let decodeDef ← if isRecursive then
-    `(partial def $decodeFnName (sv : LeanSerial.SerialValue) : Except String $typeId := do
-        let .compound ctor args := sv | .error "Expected compound value"
-        match ctor with
-        $[| $decodePatterns => $decodeArms]*
-        | _ => .error "Unknown constructor")
+    if typeParams.isEmpty then
+      `(partial def $decodeFnName (sv : LeanSerial.SerialValue) : Except String $typeId := do
+          let .compound ctor args := sv | .error "Expected compound value"
+          match ctor with
+          $[| $decodePatterns => $decodeArms]*
+          | _ => .error "Unknown constructor")
+    else
+      `(partial def $decodeFnName $instConstraints:bracketedBinder* (sv : LeanSerial.SerialValue) : Except String $polyTypeApp := do
+          let .compound ctor args := sv | .error "Expected compound value"
+          match ctor with
+          $[| $decodePatterns => $decodeArms]*
+          | _ => .error "Unknown constructor")
   else
-    `(def $decodeFnName (sv : LeanSerial.SerialValue) : Except String $typeId := do
-        let .compound ctor args := sv | .error "Expected compound value"
-        match ctor with
-        $[| $decodePatterns => $decodeArms]*
-        | _ => .error "Unknown constructor")
+    if typeParams.isEmpty then
+      `(def $decodeFnName (sv : LeanSerial.SerialValue) : Except String $typeId := do
+          let .compound ctor args := sv | .error "Expected compound value"
+          match ctor with
+          $[| $decodePatterns => $decodeArms]*
+          | _ => .error "Unknown constructor")
+    else
+      `(def $decodeFnName $instConstraints:bracketedBinder* (sv : LeanSerial.SerialValue) : Except String $polyTypeApp := do
+          let .compound ctor args := sv | .error "Expected compound value"
+          match ctor with
+          $[| $decodePatterns => $decodeArms]*
+          | _ => .error "Unknown constructor")
 
-  let inst ← `(instance : LeanSerial.Serializable $typeId where
-      encode := $encodeFnName
-      decode := $decodeFnName)
+  let inst ← if typeParams.isEmpty then
+    `(instance : LeanSerial.Serializable $typeId where
+        encode := $encodeFnName
+        decode := $decodeFnName)
+  else
+    `(instance $instConstraints:bracketedBinder* : LeanSerial.Serializable $polyTypeApp where
+        encode := $encodeFnName
+        decode := $decodeFnName)
 
   return #[encodeDef, decodeDef, inst]
 
@@ -170,6 +224,8 @@ def mkSerializableInstance (typeName : Name) : CommandElabM Unit := do
   match constInfo with
   | ConstantInfo.inductInfo inductVal =>
     let typeId := mkIdent typeName
+    let typeParams ← extractTypeParameters inductVal
+
     let constructorInfosArray ← inductVal.ctors.toArray.mapM fun ctorName => do
       let some (ConstantInfo.ctorInfo ctorVal) := env.find? ctorName
         | throwError s!"Constructor {ctorName} not found for inductive type {typeName}. This is likely an internal error."
@@ -178,8 +234,8 @@ def mkSerializableInstance (typeName : Name) : CommandElabM Unit := do
     if constructorInfosArray.isEmpty then
       throwError s!"Inductive type {typeName} has no constructors. Empty inductive types cannot be serialized."
 
-    let constructorData ← constructorInfosArray.mapM (mkConstructorData typeId inductVal)
-    let cmds ← mkSerializableQuotation typeId constructorData constructorInfosArray inductVal.isRec
+    let constructorData ← constructorInfosArray.mapM (mkConstructorData typeId inductVal ·)
+    let cmds ← mkSerializableQuotation typeId constructorData constructorInfosArray inductVal.isRec typeParams
 
     cmds.forM elabCommand
   | _ =>

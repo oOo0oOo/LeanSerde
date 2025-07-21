@@ -148,3 +148,79 @@ def run: IO Bool := do
   ]
 
 end InductiveTests
+
+namespace PolymorphicTests
+
+-- Test polymorphic types
+inductive MyPair (α β : Type) where
+  | mk (a : α) (b : β)
+  deriving LeanSerial.Serializable, BEq
+
+inductive MyOption (α : Type) where
+  | none
+  | some (value : α)
+  deriving LeanSerial.Serializable, BEq
+
+inductive MyList (α : Type) where
+  | nil
+  | cons (head : α) (tail : MyList α)
+  deriving LeanSerial.Serializable, BEq
+
+structure Container (α β : Type) where
+  first : α
+  second : β
+  items : List α
+  deriving LeanSerial.Serializable, BEq
+
+-- Test instances
+def test_polymorphic_pair : IO TestResult := do
+  let testPair : MyPair String Nat := MyPair.mk "hello" 42
+  test_roundtrip "Polymorphic Pair" testPair
+
+def test_polymorphic_option_some : IO TestResult := do
+  let testOption : MyOption String := MyOption.some "test"
+  test_roundtrip "Polymorphic Option Some" testOption
+
+def test_polymorphic_option_none : IO TestResult := do
+  let testOption : MyOption String := MyOption.none
+  test_roundtrip "Polymorphic Option None" testOption
+
+def test_polymorphic_list : IO TestResult := do
+  let testList : MyList Nat :=
+    MyList.cons 1 (MyList.cons 2 (MyList.cons 3 MyList.nil))
+  test_roundtrip "Polymorphic List" testList
+
+def test_polymorphic_container : IO TestResult := do
+  let container : Container String Nat := {
+    first := "hello",
+    second := 42,
+    items := ["a", "b", "c"]
+  }
+  test_roundtrip "Polymorphic Container" container
+
+def test_nested_polymorphic : IO TestResult := do
+  let nested : MyPair (MyOption String) (MyList Nat) :=
+    MyPair.mk (MyOption.some "test") (MyList.cons 1 (MyList.cons 2 MyList.nil))
+  test_roundtrip "Nested Polymorphic" nested
+
+-- Test with multiple type parameters
+inductive Triple (α β γ : Type) where
+  | mk (a : α) (b : β) (c : γ)
+  deriving LeanSerial.Serializable, BEq
+
+def test_triple : IO TestResult := do
+  let triple : Triple String Nat Bool := Triple.mk "hello" 42 true
+  test_roundtrip "Triple Type Parameters" triple
+
+def run : IO Bool := do
+  runTests "Polymorphic Type Serialization" [
+    test_polymorphic_pair,
+    test_polymorphic_option_some,
+    test_polymorphic_option_none,
+    test_polymorphic_list,
+    test_polymorphic_container,
+    test_nested_polymorphic,
+    test_triple
+  ]
+
+end PolymorphicTests

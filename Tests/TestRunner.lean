@@ -31,6 +31,7 @@ def main : IO Unit := do
     runTestSuite "Container Types" ContainerTests.run,
     runTestSuite "Structures" StructureTests.run,
     runTestSuite "Inductive Structures" InductiveTests.run,
+    runTestSuite "Polymorphic Structures" PolymorphicTests.run,
     runTestSuite "Library Types" LibraryTests.run,
     runTestSuite "Meta Types" MetaTests.run
   ].mapM id
