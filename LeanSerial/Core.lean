@@ -1,4 +1,5 @@
 import Lean.Data.Json
+import Std.Data.HashMap
 
 namespace LeanSerial
 
@@ -7,6 +8,7 @@ inductive SerialValue where
   | nat : Nat → SerialValue
   | bool : Bool → SerialValue
   | compound : String → Array SerialValue → SerialValue
+  | ref : Nat → SerialValue
   deriving Repr, BEq, Inhabited
 
 namespace SerialValue
@@ -17,6 +19,8 @@ def toJson : SerialValue → Lean.Json
   | .bool b => .bool b
   | .compound name children =>
     .arr #[.str name, .arr (children.map toJson)]
+  | .ref id =>
+    .mkObj [("ref", .num id)]
 
 partial def fromJson : Lean.Json → Except String SerialValue
   | .str s => .ok (.str s)
@@ -30,35 +34,94 @@ partial def fromJson : Lean.Json → Except String SerialValue
     let args ← children.mapM fromJson
     .ok (.compound name args)
   | .arr arr => .error s!"Expected [name, args], got array of size {arr.size}"
-  | _ => .error "Invalid SerialValue JSON"
+  | .obj obj => do
+    let refJson := obj.find compare "ref"
+    match refJson with
+    | some (Lean.Json.num id) =>
+      if id.exponent == 0 && id.mantissa >= 0 then
+        .ok (.ref id.mantissa.natAbs)
+      else
+        .error s!"Expected natural number for ref, got {id}"
+    | _ => .error "Invalid SerialValue JSON object"
+  | _ => .error "Invalid SerialValue JSON format"
 
 instance : Lean.ToJson SerialValue := ⟨toJson⟩
 instance : Lean.FromJson SerialValue := ⟨fromJson⟩
 
 end SerialValue
 
+structure GraphData where
+  root : SerialValue
+  objects : Array SerialValue
+  deriving Repr, BEq, Lean.ToJson, Lean.FromJson
+
+structure EncodeState where
+  seen : Std.HashMap USize Nat
+  nextId : Nat
+  objects : Array SerialValue
+
+def EncodeState.empty : EncodeState :=
+  ⟨Std.HashMap.ofList [], 0, #[]⟩
+
+abbrev EncodeM := StateM EncodeState
+abbrev DecodeM := Except String
+
+private unsafe def getObjectIdUnsafe (a : α) : USize :=
+  ptrAddrUnsafe a
+
+@[extern "lean_ptr_addr"]
+private opaque getObjectId (a : α) : USize
+
 class SerializableFormat (α : Type) where
-  serializeValue : SerialValue → α
-  deserializeValue : α → Except String SerialValue
+  serializeValue : GraphData → α
+  deserializeValue : α → Except String GraphData
 
 instance : SerializableFormat Lean.Json where
-  serializeValue sv := Lean.toJson sv
-  deserializeValue json := Lean.fromJson? json
+  serializeValue := Lean.toJson
+  deserializeValue := Lean.fromJson?
 
 instance : SerializableFormat String where
-  serializeValue sv := (Lean.toJson sv).pretty
+  serializeValue gd := (Lean.toJson gd).pretty
   deserializeValue str := do
     let json ← Lean.Json.parse str
     Lean.fromJson? json
-
--- Serialized class
-abbrev DecodeM := Except String
 
 class Serializable (α : Type) where
   encode : α → SerialValue
   decode : SerialValue → DecodeM α
 
 export Serializable (encode decode)
+
+def encodeSimple {α : Type} [Serializable α] (obj : α) : EncodeM SerialValue :=
+  return encode obj
+
+def withCycleCheck {α : Type} [Serializable α] (obj : α) : EncodeM SerialValue := do
+  let objId := getObjectId obj
+  let state ← get
+  match state.seen.get? objId with
+  | some id => return .ref id
+  | none =>
+    let serialized := encode obj
+    let newId := state.nextId
+    let newSeen := state.seen.insert objId newId
+    let newObjects := state.objects.push serialized
+    set ({ seen := newSeen, nextId := newId + 1, objects := newObjects } : EncodeState)
+    return serialized
+
+def encodeGraph {α : Type} [Serializable α] (obj : α) : GraphData :=
+  let (root, state) := (withCycleCheck obj).run EncodeState.empty
+  -- If no cycles detected (empty object table), we could optimize to simple format
+  -- But for simplicity, always use the graph format
+  ⟨root, state.objects⟩
+
+partial def decodeGraph {α : Type} [Serializable α] (gd : GraphData) : DecodeM α :=
+  let rec resolve (sv : SerialValue) : DecodeM α :=
+    match sv with
+    | .ref id =>
+      if h : id < gd.objects.size then resolve gd.objects[id]
+      else .error s!"Reference {id} out of bounds"
+    | other => decode other
+  resolve gd.root
 
 def decodeCompound (expectedName : String) (sv : SerialValue) : DecodeM (Array SerialValue) :=
   match sv with

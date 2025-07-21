@@ -10,23 +10,21 @@ import LeanSerial.MetaTypes
 namespace LeanSerial
 
 def serialize {α β} [Serializable α] [SerializableFormat β] (value : α) : β :=
-  SerializableFormat.serializeValue (encode value)
+  SerializableFormat.serializeValue (encodeGraph value)
 
-def deserialize {α β} [Serializable α] [SerializableFormat β] (data : β) : Except String α :=
-  SerializableFormat.deserializeValue data >>= decode
+def deserialize {α β} [Serializable α] [SerializableFormat β] (data : β) : Except String α := do
+  let graphData ← SerializableFormat.deserializeValue data
+  decodeGraph graphData
 
--- To File: CBOR (ByteArray)
 def serializeToFile {α} [Serializable α] (value : α) (filePath : String) : IO Unit :=
-  let bytes : ByteArray := serialize value
-  IO.FS.writeBinFile filePath bytes
+  IO.FS.writeBinFile filePath (serialize value : ByteArray)
 
 def deserializeFromFile {α} [Serializable α] (filePath : String) : IO (Except String α) := do
   let bytes ← IO.FS.readBinFile filePath
   return deserialize bytes
 
--- To File: JSON (String)
 def serializeToJsonFile {α} [Serializable α] (value : α) (filePath : String) : IO Unit :=
-  IO.FS.writeFile filePath (serialize value)
+  IO.FS.writeFile filePath (serialize value : String)
 
 def deserializeFromJsonFile {α} [Serializable α] (filePath : String) : IO (Except String α) := do
   let jsonString ← IO.FS.readFile filePath

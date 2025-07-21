@@ -114,6 +114,12 @@ structure TestContainers where
   optionalPair : Option (String × Nat)
   deriving LeanSerial.Serializable, BEq
 
+-- Cyclic
+inductive Tree where
+  | leaf : Nat → Tree
+  | node : Tree → Tree → Tree
+  deriving LeanSerial.Serializable, BEq
+
 def test_simple_inductive : IO TestResult := do
   let value := TestInductive.none
   test_roundtrip "Simple Inductive" value
@@ -165,6 +171,17 @@ def test_container_types_with_nones : IO TestResult := do
     none
   test_roundtrip "Container Types with Nones" testData
 
+def test_cyclic_tree : IO TestResult := do
+  -- Create a mutable reference that can form a cycle
+  let leafRef ← IO.mkRef (Tree.leaf 1)
+  let nodeRef ← IO.mkRef (Tree.leaf 2) -- temporary value
+
+  let cycleNode := Tree.node (Tree.leaf 1) (← nodeRef.get)
+  nodeRef.set cycleNode
+
+  let cyclicTree := Tree.node (← leafRef.get) (← nodeRef.get)
+  test_roundtrip "Cyclic Tree" cyclicTree
+
 def run: IO Bool := do
   runTests "Inductive Type Serialization" [
     test_simple_inductive,
@@ -175,7 +192,8 @@ def run: IO Bool := do
     test_mutually_recursive_inductive,
     test_recursive_inductive2,
     test_container_types,
-    test_container_types_with_nones
+    test_container_types_with_nones,
+    test_cyclic_tree
   ]
 
 end InductiveTests

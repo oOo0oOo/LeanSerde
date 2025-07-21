@@ -57,12 +57,23 @@ def encodeTextString (s : String) : ByteArray :=
 def encodeArray (items : Array ByteArray) : ByteArray :=
   encodeLength .array items.size ++ items.foldl (· ++ ·) ⟨#[]⟩
 
+def encodeMap (pairs : Array (ByteArray × ByteArray)) : ByteArray :=
+  encodeLength .map pairs.size ++ pairs.foldl (fun acc (k, v) => acc ++ k ++ v) ⟨#[]⟩
+
 partial def encodeSerialValue : SerialValue → ByteArray
   | .str s => encodeTextString s
   | .nat n => encodeUnsignedInt n
   | .bool b => encodeBool b
+  | .compound "map" children =>
+    let pairs := children.map fun child =>
+      match child with
+      | .compound "pair" #[.str k, v] => (encodeTextString k, encodeSerialValue v)
+      | _ => (encodeTextString "", encodeSerialValue child) -- Should not happen
+    encodeMap pairs
   | .compound name children =>
     encodeArray (#[encodeTextString name] ++ children.map encodeSerialValue)
+  | .ref id =>
+    encodeMap #[(encodeTextString "ref", encodeUnsignedInt id)]
 
 -- Decoding state and helpers
 structure DecodeState where
@@ -82,61 +93,73 @@ def DecodeState.consumeByte (s : DecodeState) : Option (UInt8 × DecodeState) :=
 def bytesToNatBE (bytes : ByteArray) : Nat :=
   bytes.foldl (fun acc b => acc * 256 + b.toNat) 0
 
-def decodeLength (s : DecodeState) : Option (Nat × DecodeState) := do
+def decodeHeader (s : DecodeState) : Option (MajorType × Nat × Nat × DecodeState) := do
   let (firstByte, s') ← s.consumeByte
+  let majorType ← MajorType.fromByte firstByte
   let additionalInfo := firstByte.toNat % 32
   if additionalInfo < 24 then
-    some (additionalInfo, s')
+    some (majorType, additionalInfo, additionalInfo, s')
   else if additionalInfo == 24 then do
     let (b, s'') ← s'.consumeByte
-    some (b.toNat, s'')
+    some (majorType, b.toNat, additionalInfo, s'')
   else if additionalInfo == 25 then do
     let (bytes, s'') ← s'.consume 2
-    some (bytesToNatBE bytes, s'')
+    some (majorType, bytesToNatBE bytes, additionalInfo, s'')
   else if additionalInfo == 26 then do
     let (bytes, s'') ← s'.consume 4
-    some (bytesToNatBE bytes, s'')
+    some (majorType, bytesToNatBE bytes, additionalInfo, s'')
   else if additionalInfo == 27 then do
     let (bytes, s'') ← s'.consume 8
-    some (bytesToNatBE bytes, s'')
+    some (majorType, bytesToNatBE bytes, additionalInfo, s'')
   else
     none
 
 partial def decodeSerialValue (s : DecodeState) : Option (SerialValue × DecodeState) := do
-  let (firstByte, s') ← s.consumeByte
-  let majorType ← MajorType.fromByte firstByte
+  let (majorType, len, additionalInfo, s') ← decodeHeader s
 
   match majorType with
-  | .unsignedInt => do
-    let (n, s'') ← decodeLength ⟨s.data, s.pos⟩
-    some (.nat n, s'')
+  | .unsignedInt =>
+    some (.nat len, s')
 
   | .textString => do
-    let (len, s'') ← decodeLength ⟨s.data, s.pos⟩
-    let (bytes, s''') ← s''.consume len
+    let (bytes, s'') ← s'.consume len
     let str ← String.fromUTF8? bytes
-    some (.str str, s''')
+    some (.str str, s'')
 
   | .array => do
-    let (arrayLen, s'') ← decodeLength ⟨s.data, s.pos⟩
-    if arrayLen == 0 then
-      none
+    if len == 0 then
+      some (.compound "" #[], s')
     else do
-      let (nameVal, s''') ← decodeSerialValue s''
+      let (nameVal, s'') ← decodeSerialValue s'
       let name ← match nameVal with | .str n => some n | _ => none
-      let (children, finalState) ← decodeArrayElements (arrayLen - 1) #[] s'''
+      let (children, finalState) ← decodeArrayElements (len - 1) #[] s''
       some (.compound name children, finalState)
 
+  | .map => do
+    let (pairs, finalState) ← decodeMapPairs len #[] s'
+    if len == 1 then
+      let (k, v) := pairs[0]!
+      if k == "ref" then
+        match v with
+        | .nat id => some (.ref id, finalState)
+        | _ => none -- Invalid ref format
+      else
+        let children := pairs.map fun (k, v) => .compound "pair" #[.str k, v]
+        some (.compound "map" children, finalState)
+    else
+      let children := pairs.map fun (k, v) => .compound "pair" #[.str k, v]
+      some (.compound "map" children, finalState)
+
   | .simple =>
-    let additionalInfo := firstByte.toNat % 32
     if additionalInfo == 20 then
       some (.bool false, s')
     else if additionalInfo == 21 then
       some (.bool true, s')
     else
-      none
+      none -- null and other simple values not supported
 
-  | _ => none
+  | .negativeInt | .byteString | .tag =>
+    none -- These types are not used in SerialValue
 
 where
   decodeArrayElements (remaining : Nat) (acc : Array SerialValue) (state : DecodeState)
@@ -147,15 +170,70 @@ where
       let (val, newState) ← decodeSerialValue state
       decodeArrayElements (remaining - 1) (acc.push val) newState
 
-def encodeToCBOR : SerialValue → ByteArray := encodeSerialValue
+  decodeMapPairs (remaining : Nat) (acc : Array (String × SerialValue)) (state : DecodeState)
+    : Option (Array (String × SerialValue) × DecodeState) :=
+    if remaining == 0 then
+      some (acc, state)
+    else do
+      let (keyVal, state') ← decodeSerialValue state
+      let (valueVal, state'') ← decodeSerialValue state'
+      match keyVal with
+      | .str key =>
+        decodeMapPairs (remaining - 1) (acc.push (key, valueVal)) state''
+      | _ => none
 
-def decodeFromCBOR (bytes : ByteArray) : Except String SerialValue :=
-  match decodeSerialValue ⟨bytes, 0⟩ with
-  | some (val, _) => .ok val
-  | none => .error "Failed to decode CBOR data"
+def encodeGraphToCBOR (gd : GraphData) : ByteArray :=
+  let rootEncoded := encodeSerialValue gd.root
+  let objectsArray := encodeArray (gd.objects.map encodeSerialValue)
+  encodeMap #[
+    (encodeTextString "root", rootEncoded),
+    (encodeTextString "objects", objectsArray)
+  ]
+
+partial def decodeArrayBody (remaining : Nat) (acc : Array SerialValue) (state : DecodeState)
+  : Option (Array SerialValue × DecodeState) :=
+  if remaining == 0 then
+    some (acc, state)
+  else do
+    let (val, newState) ← decodeSerialValue state
+    decodeArrayBody (remaining - 1) (acc.push val) newState
+
+def decodeGraphFromCBOR (bytes : ByteArray) : Except String GraphData := do
+  let lift {α} (o : Option α) (e : String) : Except String α :=
+    match o with
+    | some a => .ok a
+    | none => .error e
+
+  if bytes.isEmpty then
+    throw "Empty ByteArray"
+
+  let s := ⟨bytes, 0⟩
+  let (majorType, mapLen, _, s') ← lift (decodeHeader s) "Failed to decode GraphData header"
+
+  if majorType != .map then
+    throw s!"Expected CBOR map for GraphData, but got major type: {repr majorType}"
+
+  if mapLen != 2 then
+    throw s!"Expected GraphData map to have 2 pairs, got {mapLen}"
+
+  let (key1, s'') ← lift (decodeSerialValue s') "Failed to decode 'root' key"
+  let .str "root" := key1 | throw "Expected 'root' key first"
+  let (rootVal, s''') ← lift (decodeSerialValue s'') "Failed to decode 'root' value"
+
+  let (key2, s'''') ← lift (decodeSerialValue s''') "Failed to decode 'objects' key"
+  let .str "objects" := key2 | throw "Expected 'objects' key second"
+
+  let (objMajorType, objLen, _, s_obj) ← lift (decodeHeader s'''') "Failed to decode objects array header"
+
+  if objMajorType != .array then
+    throw "Expected 'objects' field to be a CBOR array"
+
+  let (objects, _) ← lift (decodeArrayBody objLen #[] s_obj) "Failed to decode content of objects array"
+
+  .ok ⟨rootVal, objects⟩
 
 instance : SerializableFormat ByteArray where
-  serializeValue := encodeToCBOR
-  deserializeValue := decodeFromCBOR
+  serializeValue := encodeGraphToCBOR
+  deserializeValue := decodeGraphFromCBOR
 
 end LeanSerial.CBOR
