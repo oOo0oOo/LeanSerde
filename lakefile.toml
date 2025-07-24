@@ -9,6 +9,9 @@ name = "LeanSerial"
 [[lean_lib]]
 name = "Tests"
 
+[[lean_lib]]
+name = "Proofs"
+
 [[lean_exe]]
 name = "leanserial"
 root = "Main"
