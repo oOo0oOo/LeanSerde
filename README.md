@@ -151,6 +151,44 @@ instance [Serializable α] : Serializable (MyArray α) where
     return decoded
 ```
 
+## Serialization Format
+
+LeanSerial uses a graph-based intermediate representation to handle complex data structures, including those with cycles and shared references. The format consists of:
+
+### SerialValue Types
+
+- **`str`**: String values
+- **`nat`**: Natural numbers
+- **`bool`**: Boolean values
+- **`compound`**: Named constructors with child values (e.g., `["FileNode", [name, children, validated]]`)
+- **`ref`**: References to previously serialized objects by ID (e.g., `{"ref": 0}`)
+
+### Graph Structure
+
+Data is serialized into a `GraphData` structure containing:
+- **`root`**: The main `SerialValue` representing your data
+- **`objects`**: An array of `SerialValue`s for shared/cyclic references
+
+This intermediate format is then encoded to your chosen output format (JSON, CBOR, String).
+
+### Example
+
+A recursive file structure like:
+```lean
+let file1 := { name := "file1.txt", children := #[], validated := some false }
+let file2 := { name := "file2.bin", children := #[file1], validated := some true }
+```
+
+Serializes to JSON as:
+```json
+{
+  "root": ["FileNode", ["file2.bin", [["FileNode", ["file1.txt", [], ["some", false]]]], ["some", true]]],
+  "objects": []
+}
+```
+
+For data with cycles or sharing, referenced objects are stored in the `objects` array and referenced by ID using the `ref` format.
+
 ## Testing
 
 Clone the repository and run:
