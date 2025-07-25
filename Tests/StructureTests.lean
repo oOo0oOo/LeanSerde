@@ -182,6 +182,17 @@ def test_cyclic_tree : IO TestResult := do
   let cyclicTree := Tree.node (← leafRef.get) (← nodeRef.get)
   test_roundtrip "Cyclic Tree" cyclicTree
 
+def test_shared_references : IO TestResult := do
+  -- Create a shared leaf that appears in multiple places
+  let sharedLeaf := Tree.leaf 42
+
+  -- Create a tree where the same leaf appears multiple times
+  let leftSubtree := Tree.node sharedLeaf (Tree.leaf 1)
+  let rightSubtree := Tree.node sharedLeaf (Tree.leaf 2)
+  let complexTree := Tree.node leftSubtree rightSubtree
+
+  test_roundtrip "Shared References Tree" complexTree
+
 def run: IO Bool := do
   runTests "Inductive Type Serialization" [
     test_simple_inductive,
@@ -193,7 +204,8 @@ def run: IO Bool := do
     test_recursive_inductive2,
     test_container_types,
     test_container_types_with_nones,
-    test_cyclic_tree
+    test_cyclic_tree,
+    test_shared_references
   ]
 
 end InductiveTests

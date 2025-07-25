@@ -17,32 +17,24 @@ def toJson : SerialValue → Lean.Json
   | .str s => .str s
   | .nat n => .num n
   | .bool b => .bool b
-  | .compound name children =>
-    .arr #[.str name, .arr (children.map toJson)]
-  | .ref id =>
-    .mkObj [("ref", .num id)]
+  | .compound name children => .arr #[.str name, .arr (children.map toJson)]
+  | .ref id => .mkObj [("ref", .num id)]
 
 partial def fromJson : Lean.Json → Except String SerialValue
   | .str s => .ok (.str s)
   | .num n =>
-    if n.exponent == 0 && n.mantissa >= 0 then
-      .ok (.nat n.mantissa.natAbs)
-    else
-      .error s!"Expected natural number, got {n}"
+    if n.exponent == 0 && n.mantissa >= 0 then .ok (.nat n.mantissa.natAbs)
+    else .error s!"Expected natural number, got {n}"
   | .bool b => .ok (.bool b)
   | .arr #[.str name, .arr children] => do
     let args ← children.mapM fromJson
     .ok (.compound name args)
   | .arr arr => .error s!"Expected [name, args], got array of size {arr.size}"
   | .obj obj => do
-    let refJson := obj.find compare "ref"
-    match refJson with
-    | some (Lean.Json.num id) =>
-      if id.exponent == 0 && id.mantissa >= 0 then
-        .ok (.ref id.mantissa.natAbs)
-      else
-        .error s!"Expected natural number for ref, got {id}"
-    | _ => .error "Invalid SerialValue JSON object"
+    let some (Lean.Json.num id) := obj.find compare "ref"
+      | .error "Invalid SerialValue JSON object"
+    if id.exponent == 0 && id.mantissa >= 0 then .ok (.ref id.mantissa.natAbs)
+    else .error s!"Expected natural number for ref, got {id}"
   | _ => .error "Invalid SerialValue JSON format"
 
 instance : Lean.ToJson SerialValue := ⟨toJson⟩
@@ -53,21 +45,17 @@ end SerialValue
 structure GraphData where
   root : SerialValue
   objects : Array SerialValue
-  deriving Repr, BEq, Lean.ToJson, Lean.FromJson
+  deriving Lean.ToJson, Lean.FromJson
 
-structure EncodeState where
+private structure EncodeState where
   seen : Std.HashMap USize Nat
   nextId : Nat
   objects : Array SerialValue
 
-def EncodeState.empty : EncodeState :=
-  ⟨Std.HashMap.ofList [], 0, #[]⟩
+private def EncodeState.empty : EncodeState := ⟨Std.HashMap.ofList [], 0, #[]⟩
 
-abbrev EncodeM := StateM EncodeState
+private abbrev EncodeM := StateM EncodeState
 abbrev DecodeM := Except String
-
-private unsafe def getObjectIdUnsafe (a : α) : USize :=
-  ptrAddrUnsafe a
 
 @[extern "lean_ptr_addr"]
 private opaque getObjectId (a : α) : USize
@@ -82,9 +70,7 @@ instance : SerializableFormat Lean.Json where
 
 instance : SerializableFormat String where
   serializeValue gd := (Lean.toJson gd).pretty
-  deserializeValue str := do
-    let json ← Lean.Json.parse str
-    Lean.fromJson? json
+  deserializeValue str := Lean.Json.parse str >>= Lean.fromJson?
 
 class Serializable (α : Type) where
   encode : α → SerialValue
@@ -92,10 +78,7 @@ class Serializable (α : Type) where
 
 export Serializable (encode decode)
 
-def encodeSimple {α : Type} [Serializable α] (obj : α) : EncodeM SerialValue :=
-  return encode obj
-
-def withCycleCheck {α : Type} [Serializable α] (obj : α) : EncodeM SerialValue := do
+private def encodeWithSharing {α : Type} [Serializable α] (obj : α) : EncodeM SerialValue := do
   let objId := getObjectId obj
   let state ← get
   match state.seen.get? objId with
@@ -103,15 +86,11 @@ def withCycleCheck {α : Type} [Serializable α] (obj : α) : EncodeM SerialValu
   | none =>
     let serialized := encode obj
     let newId := state.nextId
-    let newSeen := state.seen.insert objId newId
-    let newObjects := state.objects.push serialized
-    set ({ seen := newSeen, nextId := newId + 1, objects := newObjects } : EncodeState)
+    modify fun s => { seen := s.seen.insert objId newId, nextId := newId + 1, objects := s.objects.push serialized }
     return serialized
 
 def encodeGraph {α : Type} [Serializable α] (obj : α) : GraphData :=
-  let (root, state) := (withCycleCheck obj).run EncodeState.empty
-  -- If no cycles detected (empty object table), we could optimize to simple format
-  -- But for simplicity, always use the graph format
+  let (root, state) := (encodeWithSharing obj).run EncodeState.empty
   ⟨root, state.objects⟩
 
 partial def decodeGraph {α : Type} [Serializable α] (gd : GraphData) : DecodeM α :=
