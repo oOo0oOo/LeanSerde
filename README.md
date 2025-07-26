@@ -153,7 +153,7 @@ instance [Serializable α] : Serializable (MyArray α) where
 
 ## Serialization Format
 
-LeanSerial uses a graph-based intermediate representation to handle complex data structures, including those with cycles and shared references. The format consists of:
+LeanSerial automatically chooses between direct serialization or deduplication based on repeated values.
 
 ### SerialValue Types
 
@@ -161,33 +161,49 @@ LeanSerial uses a graph-based intermediate representation to handle complex data
 - **`nat`**: Natural numbers
 - **`bool`**: Boolean values
 - **`compound`**: Named constructors with child values (e.g., `["FileNode", [name, children, validated]]`)
-- **`ref`**: References to previously serialized objects by ID (e.g., `{"ref": 0}`)
+- **`ref`**: References to shared objects by consecutive ID starting from 0 (e.g., `{"ref": 0}`)
 
-### Graph Structure
+### Formats
 
-Data is serialized into a `GraphData` structure containing:
-- **`root`**: The main `SerialValue` representing your data
-- **`objects`**: An array of `SerialValue`s for shared/cyclic references
+**Simple Format**: Direct serialization without repeating values.
 
-This intermediate format is then encoded to your chosen output format (JSON, CBOR, String).
+**Graph Format**: Deduplicating format when values are shared. Creates a `GraphData` structure with:
+- **`root`**: The main `SerialValue` with refs to shared objects
+- **`objects`**: Array of shared `SerialValue`s
 
-### Example
+This intermediate representation then gets encoded to the final output format (JSON, CBOR, String).
 
-A recursive file structure like:
+Deserialization automatically handles all output formats.
+
+### Examples
+
 ```lean
-let file1 := { name := "file1.txt", children := #[], validated := some false }
-let file2 := { name := "file2.bin", children := #[file1], validated := some true }
+let file1 : FileNode := { name := "file1.txt", children := #[], validated := some false }
+let file2 : FileNode := { name := "file2.bin", children := #[file1], validated := some true }
+let file3 : FileNode := { name := "file3.txt", children := #[file1, file1], validated := some false }
 ```
 
-Serializes to JSON as:
-```json
-{
-  "root": ["FileNode", ["file2.bin", [["FileNode", ["file1.txt", [], ["some", false]]]], ["some", true]]],
-  "objects": []
-}
+**Simple format** (no sharing):
+```jsonc
+// file1
+["FileNode.mk", ["file1.txt", ["Array", []], ["Option.some", [false]]]]
+
+// file2
+["FileNode.mk",
+ ["file2.bin",
+  ["Array", [["FileNode.mk", ["file1.txt", ["Array", []], ["Option.some", [false]]]]]],
+  ["Option.some", [true]]]]
 ```
 
-For data with cycles or sharing, referenced objects are stored in the `objects` array and referenced by ID using the `ref` format.
+**Graph format** (file1 appears twice in file3):
+```jsonc
+// file3
+{"root":
+ ["FileNode.mk",
+  ["file3.txt", ["Array", [{"ref": 0}, {"ref": 0}]], ["Option.some", [false]]]],
+ "objects":
+ [["FileNode.mk", ["file1.txt", ["Array", []], ["Option.some", [false]]]]]}
+```
 
 ## Testing
 

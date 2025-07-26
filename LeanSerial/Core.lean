@@ -13,6 +13,19 @@ inductive SerialValue where
 
 namespace SerialValue
 
+partial def hashSerialValue : SerialValue → UInt64
+  -- Structural hash using mixHash with variant-specific prefixes for better distribution
+  | .str s => mixHash 1 (hash s)
+  | .nat n => mixHash 2 (hash n)
+  | .bool b => mixHash 3 (hash b)
+  | .compound name children =>
+    let childrenHash := children.foldl (fun acc child => mixHash acc (hashSerialValue child)) 7
+    mixHash 4 (mixHash (hash name) childrenHash)
+  | .ref id => mixHash 5 (hash id)
+
+instance : Hashable SerialValue where
+  hash := hashSerialValue
+
 def toJson : SerialValue → Lean.Json
   | .str s => .str s
   | .nat n => .num n
@@ -48,29 +61,39 @@ structure GraphData where
   deriving Lean.ToJson, Lean.FromJson
 
 private structure EncodeState where
-  seen : Std.HashMap USize Nat
+  seen : Std.HashMap SerialValue Nat
   nextId : Nat
   objects : Array SerialValue
 
-private def EncodeState.empty : EncodeState := ⟨Std.HashMap.ofList [], 0, #[]⟩
+private def EncodeState.empty : EncodeState := ⟨{}, 0, #[]⟩
 
 private abbrev EncodeM := StateM EncodeState
 abbrev DecodeM := Except String
-
-@[extern "lean_ptr_addr"]
-private opaque getObjectId (a : α) : USize
 
 class SerializableFormat (α : Type) where
   serializeValue : GraphData → α
   deserializeValue : α → Except String GraphData
 
+private def serializeToJson (gd : GraphData) : Lean.Json :=
+  if gd.objects.isEmpty then
+    gd.root.toJson
+  else
+    Lean.toJson gd
+
+private def deserializeFromJson (json : Lean.Json) : Except String GraphData :=
+  match SerialValue.fromJson json with
+  | .ok sv => .ok ⟨sv, #[]⟩
+  | .error _ => Lean.fromJson? json
+
 instance : SerializableFormat Lean.Json where
-  serializeValue := Lean.toJson
-  deserializeValue := Lean.fromJson?
+  serializeValue := serializeToJson
+  deserializeValue := deserializeFromJson
 
 instance : SerializableFormat String where
-  serializeValue gd := (Lean.toJson gd).pretty
-  deserializeValue str := Lean.Json.parse str >>= Lean.fromJson?
+  serializeValue gd := (serializeToJson gd).pretty
+  deserializeValue str := do
+    let json ← Lean.Json.parse str
+    deserializeFromJson json
 
 class Serializable (α : Type) where
   encode : α → SerialValue
@@ -78,29 +101,61 @@ class Serializable (α : Type) where
 
 export Serializable (encode decode)
 
-private def encodeWithSharing {α : Type} [Serializable α] (obj : α) : EncodeM SerialValue := do
-  let objId := getObjectId obj
-  let state ← get
-  match state.seen.get? objId with
-  | some id => return .ref id
-  | none =>
-    let serialized := encode obj
-    let newId := state.nextId
-    modify fun s => { seen := s.seen.insert objId newId, nextId := newId + 1, objects := s.objects.push serialized }
-    return serialized
+private partial def countOccurrences (sv : SerialValue) (counts : Std.HashMap SerialValue Nat) : Std.HashMap SerialValue Nat :=
+  -- Count occurrences of SerialValue in a structure
+  match sv with
+  | .str _ | .nat _ | .bool _ | .ref _ => counts
+  | .compound _name children =>
+    let counts := counts.insert sv (counts.getD sv 0 + 1)
+    children.foldl (fun acc child => countOccurrences child acc) counts
+
+private partial def encodeWithRefs (sv : SerialValue) (shared : Std.HashMap SerialValue Nat) : EncodeM SerialValue := do
+  -- Encode a SerialValue, replacing shared values with references.
+  match sv with
+  | .str _ | .nat _ | .bool _ | .ref _ => return sv
+  | .compound name children =>
+    if shared.getD sv 0 > 1 then
+      let state ← get
+      match state.seen.get? sv with
+      | some id =>
+        return .ref id
+      | none =>
+        let newId := state.nextId
+        modify fun s => { s with
+          seen := s.seen.insert sv newId,
+          nextId := newId + 1,
+          objects := s.objects.push sv
+        }
+        return .ref newId
+    else
+      let children' ← children.mapM (encodeWithRefs · shared)
+      return .compound name children'
 
 def encodeGraph {α : Type} [Serializable α] (obj : α) : GraphData :=
-  let (root, state) := (encodeWithSharing obj).run EncodeState.empty
+  let initialSv := encode obj
+  let counts := countOccurrences initialSv {}
+  let sharedValues := counts.filter (fun _ count => count > 1)
+  let (root, state) := (encodeWithRefs initialSv sharedValues).run EncodeState.empty
   ⟨root, state.objects⟩
 
-partial def decodeGraph {α : Type} [Serializable α] (gd : GraphData) : DecodeM α :=
-  let rec resolve (sv : SerialValue) : DecodeM α :=
+partial def decodeGraph {α : Type} [Serializable α] (gd : GraphData) : DecodeM α := do
+  -- First, resolve all refs in the entire structure to get a ref-free tree
+  -- Then decode the root value
+  let rec resolveRefs (sv : SerialValue) : DecodeM SerialValue :=
     match sv with
     | .ref id =>
-      if h : id < gd.objects.size then resolve gd.objects[id]
-      else .error s!"Reference {id} out of bounds"
-    | other => decode other
-  resolve gd.root
+      if h : id < gd.objects.size then
+        resolveRefs gd.objects[id]
+      else
+        .error s!"Reference {id} out of bounds"
+    | .compound name children =>
+      match children.mapM resolveRefs with
+      | .ok children' => .ok (.compound name children')
+      | .error e => .error e
+    | other => .ok other
+  let resolvedRoot ← resolveRefs gd.root
+
+  decode resolvedRoot
 
 def decodeCompound (expectedName : String) (sv : SerialValue) : DecodeM (Array SerialValue) :=
   match sv with

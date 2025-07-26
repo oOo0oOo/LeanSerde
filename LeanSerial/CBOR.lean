@@ -142,15 +142,28 @@ where
       decodeMapPairs (remaining - 1) (acc.push (key, valueVal)) state''
 
 private def encodeGraphToCBOR (gd : GraphData) : ByteArray :=
-  encodeMap #[
-    (encodeTextString "root", encodeSerialValue gd.root),
-    (encodeTextString "objects", encodeArray (gd.objects.map encodeSerialValue))
-  ]
+  if gd.objects.isEmpty then
+    encodeSerialValue gd.root
+  else
+    encodeMap #[
+      (encodeTextString "root", encodeSerialValue gd.root),
+      (encodeTextString "objects", encodeArray (gd.objects.map encodeSerialValue))
+    ]
 
 private def decodeGraphFromCBOR (bytes : ByteArray) : Except String GraphData := do
   if bytes.isEmpty then throw "Empty ByteArray"
-
   let s := ⟨bytes, 0⟩
+
+  -- Try to decode as simple SerialValue first (like JSON does), otherwise fall back to graph format
+  match decodeSerialValue s with
+  | some (sv, finalState) =>
+    if finalState.pos == bytes.size then
+      return ⟨sv, #[]⟩
+    else
+      pure ()
+  | none => pure ()
+
+  -- Parse as graph format
   let some (majorType, mapLen, _, s') := decodeHeader s | throw "Failed to decode header"
   if majorType != .map then throw s!"Expected CBOR map, got {repr majorType}"
   if mapLen != 2 then throw s!"Expected 2 pairs, got {mapLen}"

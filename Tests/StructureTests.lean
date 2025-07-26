@@ -285,3 +285,91 @@ def run : IO Bool := do
   ]
 
 end PolymorphicTests
+
+namespace RefsTests
+
+-- Simple structure for testing refs
+structure SimpleNode where
+  value : Nat
+  name : String
+  deriving LeanSerial.Serializable, BEq
+
+structure NodeContainer where
+  nodes : Array SimpleNode
+  deriving LeanSerial.Serializable, BEq
+
+def test_simple_refs : IO TestResult := do
+  -- Create a shared node that appears multiple times
+  let sharedNode := SimpleNode.mk 42 "shared"
+  let container := NodeContainer.mk #[sharedNode, sharedNode, sharedNode, sharedNode, sharedNode]
+
+  -- This should create refs since the same node appears 3 times
+  test_roundtrip "Simple Refs" container
+
+def test_mixed_refs : IO TestResult := do
+  -- Create some shared and some unique nodes
+  let sharedNode1 := SimpleNode.mk 100 "first"
+  let sharedNode2 := SimpleNode.mk 200 "second"
+  let uniqueNode := SimpleNode.mk 300 "unique"
+
+  let container := NodeContainer.mk #[
+    sharedNode1,     -- First occurrence
+    uniqueNode,      -- Only occurrence (no ref)
+    sharedNode2,     -- First occurrence
+    sharedNode1,     -- Should be ref to first
+    sharedNode2      -- Should be ref to second
+  ]
+  test_roundtrip "Mixed Refs" container
+
+private def stringContains (haystack : String) (needle : String) : Bool :=
+  (haystack.splitOn needle).length > 1
+
+def test_no_refs_format : IO TestResult := do
+  -- Test that non-shared structures use simple format (no graph)
+  let uniqueNode1 := SimpleNode.mk 100 "first"
+  let uniqueNode2 := SimpleNode.mk 200 "second"
+  let container := NodeContainer.mk #[uniqueNode1, uniqueNode2]
+
+  let serialized : String := LeanSerial.serialize container
+
+  -- Should be simple array format, not graph format with "root" and "objects"
+  if stringContains serialized "\"root\"" || stringContains serialized "\"objects\"" then
+    return TestResult.failure "No Refs Format" "Expected simple format but got graph format with root/objects"
+
+  -- Should contain the actual structure directly
+  if !stringContains serialized "NodeContainer.mk" then
+    return TestResult.failure "No Refs Format" "Expected direct structure serialization"
+
+  return TestResult.success "No Refs Format"
+
+def test_refs_format : IO TestResult := do
+  -- Test that shared structures use graph format with refs
+  let sharedNode := SimpleNode.mk 42 "shared"
+  let container := NodeContainer.mk #[sharedNode, sharedNode, sharedNode, sharedNode]
+
+  let serialized : String := LeanSerial.serialize container
+
+  -- Should be graph format with "root" and "objects"
+  if !stringContains serialized "\"root\"" || !stringContains serialized "\"objects\"" then
+    return TestResult.failure "Refs Format" "Expected graph format with root and objects"
+
+  -- Should contain refs
+  if !stringContains serialized "{\"ref\":" then
+    return TestResult.failure "Refs Format" "Expected ref objects in serialized format"
+
+  -- Should have exactly one object in the objects array (the shared node)
+  let objectsCount := (serialized.splitOn "SimpleNode.mk").length - 1
+  if objectsCount != 1 then
+    return TestResult.failure "Refs Format" s!"Expected 1 SimpleNode.mk in objects, found {objectsCount}"
+
+  return TestResult.success "Refs Format"
+
+def run : IO Bool := do
+  runTests "Reference Serialization" [
+    test_simple_refs,
+    test_mixed_refs,
+    test_no_refs_format,
+    test_refs_format
+  ]
+
+end RefsTests

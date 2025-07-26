@@ -33,7 +33,8 @@ def main : IO Unit := do
     runTestSuite "Inductive Structures" InductiveTests.run,
     runTestSuite "Polymorphic Structures" PolymorphicTests.run,
     runTestSuite "Library Types" LibraryTests.run,
-    runTestSuite "Meta Types" MetaTests.run
+    runTestSuite "Meta Types" MetaTests.run,
+    runTestSuite "Refs Format" RefsTests.run
   ].mapM id
 
   let totalTests := results.length
