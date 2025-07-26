@@ -13,14 +13,15 @@
   </a>
 </p>
 
-## WIP! Expect breaking changes and bugs.
+## WIP!
 
 Feedback welcome!
 
 ## Key Features
 
 * **Type Safety**: Compile-time guarantees with automatic deriving for custom types
-* **Multiple Formats**: Serialize to ByteArray (CBOR), JSON, or String
+* **Deduplication**: Efficient serialization of shared structures
+* **Multiple Formats**: Serialize to ByteArray (CBOR), Lean.Json, or String
 
 ## Usage
 
