@@ -337,7 +337,7 @@ def test_no_refs_format : IO TestResult := do
     return TestResult.failure "No Refs Format" "Expected simple format but got graph format with root/objects"
 
   -- Should contain the actual structure directly
-  if !stringContains serialized "NodeContainer.mk" then
+  if !stringContains serialized "NodeContainer" then
     return TestResult.failure "No Refs Format" "Expected direct structure serialization"
 
   return TestResult.success "No Refs Format"
@@ -358,9 +358,9 @@ def test_refs_format : IO TestResult := do
     return TestResult.failure "Refs Format" "Expected ref objects in serialized format"
 
   -- Should have exactly one object in the objects array (the shared node)
-  let objectsCount := (serialized.splitOn "SimpleNode.mk").length - 1
+  let objectsCount := (serialized.splitOn "SimpleNode").length - 1
   if objectsCount != 1 then
-    return TestResult.failure "Refs Format" s!"Expected 1 SimpleNode.mk in objects, found {objectsCount}"
+    return TestResult.failure "Refs Format" s!"Expected 1 SimpleNode in objects, found {objectsCount}"
 
   return TestResult.success "Refs Format"
 

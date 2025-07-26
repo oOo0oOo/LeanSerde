@@ -186,12 +186,13 @@ let file3 : FileNode := { name := "file3.txt", children := #[file1, file1], vali
 **Simple format** (no sharing):
 ```jsonc
 // file1
-["FileNode.mk", ["file1.txt", ["Array", []], ["Option.some", [false]]]]
+["FileNode", ["file1.txt", ["Array", []], ["Option.some", [false]]]]
 
 // file2
-["FileNode.mk",
+["FileNode",
  ["file2.bin",
-  ["Array", [["FileNode.mk", ["file1.txt", ["Array", []], ["Option.some", [false]]]]]],
+  ["Array",
+   [["FileNode", ["file1.txt", ["Array", []], ["Option.some", [false]]]]]],
   ["Option.some", [true]]]]
 ```
 
@@ -199,10 +200,10 @@ let file3 : FileNode := { name := "file3.txt", children := #[file1, file1], vali
 ```jsonc
 // file3
 {"root":
- ["FileNode.mk",
-  ["file3.txt", ["Array", [{"ref": 0}, {"ref": 0}]], ["Option.some", [false]]]],
+ ["FileNode",
+  ["file3.txt", ["Array", [{"ref": 0}, {"ref": 0}]], ["Option.some", [true]]]],
  "objects":
- [["FileNode.mk", ["file1.txt", ["Array", []], ["Option.some", [false]]]]]}
+ [["FileNode", ["file1.txt", ["Array", []], ["Option.some", [false]]]]]}
 ```
 
 ## Testing

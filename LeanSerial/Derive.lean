@@ -173,7 +173,7 @@ private def mkConstructorData (typeId : TSyntax `ident) (inductVal : InductiveVa
   return {
     encodePattern := encodePattern,
     encodeElems := encodeElems,
-    name := ctor.name.toString,
+    name := ctor.name.toString.replace ".mk" "",
     ctorApp := ctorApp,
     decodeStmts := decodeStmts
   }
