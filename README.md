@@ -116,6 +116,13 @@ def main : IO Unit := do
 | Std.Time.PlainDate, PlainTime, PlainDateTime | ok       |
 | Std.Time.TimeZone, TimeZone.ZoneRules     | ok          |
 | Std.Time.ZonedDateTime                    | ok          |
+
+### Meta Types
+
+Use `import LeanSerde.MetaTypes` to access meta types:
+
+| Type Name                                 | Status      |
+|-------------------------------------------|-------------|
 | Lean.Name, LevelMVarId, Level             | ok          |
 | Lean.Syntax.Preresolved, Syntax           | ok          |
 | Lean.FVarId, MVarId, BinderInfo, Literal, DataValue | ok |

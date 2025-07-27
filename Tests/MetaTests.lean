@@ -4,7 +4,7 @@ import Lean.Meta
 
 import Tests.TestFramework
 import LeanSerde
-
+import LeanSerde.MetaTypes
 
 open TestFramework Lean Elab Meta Term Command
 
