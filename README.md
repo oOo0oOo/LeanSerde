@@ -8,6 +8,9 @@
   <a href="https://github.com/leanprover/lean4/releases/tag/v4.21.0">
     <img src="https://img.shields.io/badge/Lean-v4.21.0-blue" alt="Lean version" />
   </a>
+  <a href="">
+    <img src="https://img.shields.io/github/last-commit/oOo0oOo/LeanSerde" alt="last update" />
+  </a>
   <a href="https://github.com/oOo0oOo/LeanSerde/blob/main/LICENSE">
     <img src="https://img.shields.io/github/license/oOo0oOo/LeanSerde.svg" alt="license" />
   </a>
