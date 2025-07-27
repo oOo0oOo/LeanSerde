@@ -5,7 +5,7 @@ import Tests.StructureTests
 import Tests.LibraryTests
 import Tests.MetaTests
 
-open LeanSerial
+open LeanSerde
 
 def runTestSuite (suiteName : String) (tests : IO Bool) : IO Bool := do
   IO.println ""
@@ -22,7 +22,7 @@ def runTestSuite (suiteName : String) (tests : IO Bool) : IO Bool := do
     return false
 
 def main : IO Unit := do
-  IO.println "LeanSerial Test Suite"
+  IO.println "LeanSerde Test Suite"
   IO.println "====================="
 
   let results ← [

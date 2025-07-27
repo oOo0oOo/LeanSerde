@@ -1,10 +1,10 @@
-import LeanSerial.Core
-import LeanSerial.PrimitiveTypes
-import LeanSerial.Derive
+import LeanSerde.Core
+import LeanSerde.PrimitiveTypes
+import LeanSerde.Derive
 
-namespace LeanSerial
+namespace LeanSerde
 
-deriving instance LeanSerial.Serializable for Prod, Sum, Option, Except, List, Array
+deriving instance LeanSerde.Serializable for Prod, Sum, Option, Except, List, Array
 
 -- Subarray
 instance [Serializable α] : Serializable (Subarray α) where
@@ -58,4 +58,4 @@ instance {α : Type} [Serializable α] : Serializable (Unit → α) where
     | other =>
       .error s!"Expected Thunk compound, got {repr other}"
 
-end LeanSerial
+end LeanSerde

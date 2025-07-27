@@ -1,7 +1,7 @@
 import Std.Time
-import LeanSerial.Core
+import LeanSerde.Core
 
-namespace LeanSerial
+namespace LeanSerde
 
 -- Units: Era, Year, Month, Week, Weekday, Day, Hour, Minute, Second, Millisecond, Nanosecond
 instance : Serializable Std.Time.Year.Era where
@@ -274,4 +274,4 @@ instance : Serializable Std.Time.ZonedDateTime where
     else
       .error s!"ZonedDateTime expects 2 args, got {args.size}"
 
-end LeanSerial
+end LeanSerde

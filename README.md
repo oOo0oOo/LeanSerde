@@ -1,5 +1,5 @@
 <h1 align="center">
-  LeanSerial
+  LeanSerde
 </h1>
 
 <h3 align="center">Type-safe serialization for Lean</h3>
@@ -8,8 +8,8 @@
   <a href="https://github.com/leanprover/lean4/releases/tag/v4.21.0">
     <img src="https://img.shields.io/badge/Lean-v4.21.0-blue" alt="Lean version" />
   </a>
-  <a href="https://github.com/oOo0oOo/LeanSerial/blob/main/LICENSE">
-    <img src="https://img.shields.io/github/license/oOo0oOo/LeanSerial.svg" alt="license" />
+  <a href="https://github.com/oOo0oOo/LeanSerde/blob/main/LICENSE">
+    <img src="https://img.shields.io/github/license/oOo0oOo/LeanSerde.svg" alt="license" />
   </a>
 </p>
 
@@ -25,26 +25,26 @@ Feedback welcome!
 
 ## Usage
 
-Add `LeanSerial` as a dependency to your `lakefile.toml`:
+Add `LeanSerde` as a dependency to your `lakefile.toml`:
 
 ```toml
 [[require]]
-name = "LeanSerial"
-git = "https://github.com/oOo0oOo/LeanSerial.git"
+name = "LeanSerde"
+git = "https://github.com/oOo0oOo/LeanSerde.git"
 rev = "main"
 ```
 
 Use it as follows:
 
 ```lean
-import LeanSerial
+import LeanSerde
 
--- Custom types by deriving `LeanSerial.Serializable`
+-- Custom types by deriving `LeanSerde.Serializable`
 structure FileNode where
   name : String
   children : Array FileNode  -- Recursive!
   validated : Option Bool
-  deriving LeanSerial.Serializable, BEq
+  deriving LeanSerde.Serializable, BEq
 
 def main : IO Unit := do
   -- Create a recursive file structure
@@ -52,11 +52,11 @@ def main : IO Unit := do
   let file2 : FileNode := { name := "file2.bin", children := #[file1], validated := true }
 
   -- Serialize to different formats
-  let bytes : ByteArray := LeanSerial.serialize file2 -- Binary format (CBOR)
-  let json : Lean.Json := LeanSerial.serialize file2
-  let string : String := LeanSerial.serialize file2
+  let bytes : ByteArray := LeanSerde.serialize file2 -- Binary format (CBOR)
+  let json : Lean.Json := LeanSerde.serialize file2
+  let string : String := LeanSerde.serialize file2
 
-  match LeanSerial.deserialize bytes with
+  match LeanSerde.deserialize bytes with
   | .ok (node: FileNode) =>
     if node == file2 then
       IO.println "Roundtrip successful!"
@@ -65,26 +65,26 @@ def main : IO Unit := do
   | .error msg => IO.println s!"Error: {msg}"
 
   -- Serialize directly to/from file
-  LeanSerial.serializeToFile file2 "serialized.cbor"
-  LeanSerial.serializeToJsonFile file2 "serialized.json"
+  LeanSerde.serializeToFile file2 "serialized.cbor"
+  LeanSerde.serializeToJsonFile file2 "serialized.json"
 
-  match (← LeanSerial.deserializeFromFile "serialized.cbor") with
+  match (← LeanSerde.deserializeFromFile "serialized.cbor") with
   | .ok node =>
     if node == file2 then
       IO.println "File roundtrip successful!"
   | .error msg => IO.println s!"Error loading file: {msg}"
 
   -- Supports variety of types
-  let _ : ByteArray := LeanSerial.serialize [3, 1, 4]
-  let _ : ByteArray := LeanSerial.serialize #[1.1, 2.2, 3.2]
-  let _ : ByteArray := LeanSerial.serialize (Sum.inl 42 : Sum Nat String)
-  let _ : ByteArray := LeanSerial.serialize (.ok "success" : Except String String)
-  let _ : ByteArray := LeanSerial.serialize (("key", 123), ("value", 456))
-  let _ : ByteArray := LeanSerial.serialize [true, false, true]
-  let _ : ByteArray := LeanSerial.serialize [[1, 2], [3, 4], []]
-  let _ : ByteArray := LeanSerial.serialize (System.FilePath.mk "/tmp/test.txt")
-  let _ : ByteArray := LeanSerial.serialize (Std.Time.PlainDateTime.ofDaysSinceUNIXEpoch 1000 ⟨0, 0, 0, 0⟩)
-  let _ : ByteArray := LeanSerial.serialize (some (some (some 42)))
+  let _ : ByteArray := LeanSerde.serialize [3, 1, 4]
+  let _ : ByteArray := LeanSerde.serialize #[1.1, 2.2, 3.2]
+  let _ : ByteArray := LeanSerde.serialize (Sum.inl 42 : Sum Nat String)
+  let _ : ByteArray := LeanSerde.serialize (.ok "success" : Except String String)
+  let _ : ByteArray := LeanSerde.serialize (("key", 123), ("value", 456))
+  let _ : ByteArray := LeanSerde.serialize [true, false, true]
+  let _ : ByteArray := LeanSerde.serialize [[1, 2], [3, 4], []]
+  let _ : ByteArray := LeanSerde.serialize (System.FilePath.mk "/tmp/test.txt")
+  let _ : ByteArray := LeanSerde.serialize (Std.Time.PlainDateTime.ofDaysSinceUNIXEpoch 1000 ⟨0, 0, 0, 0⟩)
+  let _ : ByteArray := LeanSerde.serialize (some (some (some 42)))
 ```
 
 ## Supported Types
@@ -142,7 +142,7 @@ def main : IO Unit := do
 If deriving fails, you can manually implement `Serializable` for your types:
 
 ```lean
-namespace LeanSerial
+namespace LeanSerde
 
 instance [Serializable α] : Serializable (MyArray α) where
   encode xs := .compound "MyArray" (xs.map encode)
@@ -154,7 +154,7 @@ instance [Serializable α] : Serializable (MyArray α) where
 
 ## Serialization Format
 
-LeanSerial automatically chooses between direct serialization or deduplication based on repeated values.
+LeanSerde automatically chooses between direct serialization or deduplication based on repeated values.
 
 ### SerialValue Types
 

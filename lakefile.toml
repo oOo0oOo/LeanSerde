@@ -1,16 +1,16 @@
-name = "LeanSerial"
+name = "LeanSerde"
 version = "0.1.0"
-defaultTargets = ["leanserial"]
+defaultTargets = ["leanserde"]
 testDriver = "tests"
 
 [[lean_lib]]
-name = "LeanSerial"
+name = "LeanSerde"
 
 [[lean_lib]]
 name = "Tests"
 
 [[lean_exe]]
-name = "leanserial"
+name = "leanserde"
 root = "Main"
 
 [[lean_exe]]

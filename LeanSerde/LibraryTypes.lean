@@ -7,11 +7,11 @@ import Lean.Data.RBTree
 import Lean.Data.PersistentHashMap
 import Lean.Data.PersistentArray
 
-import LeanSerial.PrimitiveTypes
-import LeanSerial.ContainerTypes
-import LeanSerial.Derive
+import LeanSerde.PrimitiveTypes
+import LeanSerde.ContainerTypes
+import LeanSerde.Derive
 
-namespace LeanSerial
+namespace LeanSerde
 
 -- HashMap
 instance [Serializable k] [Serializable v] [BEq k] [Hashable k] : Serializable (Std.HashMap k v) where
@@ -50,7 +50,7 @@ instance : Serializable Lean.Json where
     | other =>
       .error s!"Expected Json compound, got {repr other}"
 
-deriving instance LeanSerial.Serializable for Lean.Position
+deriving instance LeanSerde.Serializable for Lean.Position
 
 -- Lean.RBMap
 instance {k v : Type} [Serializable k] [Serializable v] {cmp : k → k → Ordering} : Serializable (Lean.RBMap k v cmp) where
@@ -104,7 +104,7 @@ instance : Serializable Lean.Position where
       .error s!"Expected Position compound, got {repr other}"
 
 -- Basic Format support
-deriving instance LeanSerial.Serializable for Std.Format.FlattenBehavior
+deriving instance LeanSerde.Serializable for Std.Format.FlattenBehavior
 
 -- RBTree
 instance {k : Type} [Serializable k] {cmp : k → k → Ordering} : Serializable (Lean.RBTree k cmp) where
@@ -114,4 +114,4 @@ instance {k : Type} [Serializable k] {cmp : k → k → Ordering} : Serializable
     let elems ← args.mapM decode |>.mapError (·)
     .ok (elems.toList.foldl (init := Lean.RBTree.empty) (fun acc elem => acc.insert elem))
 
-end LeanSerial
+end LeanSerde

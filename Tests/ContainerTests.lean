@@ -1,5 +1,5 @@
 import Tests.TestFramework
-import LeanSerial
+import LeanSerde
 
 open TestFramework
 
@@ -14,8 +14,8 @@ instance [BEq ε] [BEq α] : BEq (Except ε α) where
 
 def test_bytearray_impl : IO TestResult := do
   let ba1 := ByteArray.mk #[1, 2, 3]
-  let bytes: ByteArray := LeanSerial.serialize ba1
-  match (LeanSerial.deserialize bytes : Except String ByteArray) with
+  let bytes: ByteArray := LeanSerde.serialize ba1
+  match (LeanSerde.deserialize bytes : Except String ByteArray) with
   | .error e => return TestResult.failure "ByteArray" s!"Failed to deserialize: {e}"
   | .ok ba2 =>
     if ba1.data == ba2.data then
@@ -25,8 +25,8 @@ def test_bytearray_impl : IO TestResult := do
 
 def test_bytearray_empty_impl : IO TestResult := do
   let empty := ByteArray.mk #[]
-  let bytes: ByteArray := LeanSerial.serialize empty
-  match (LeanSerial.deserialize bytes : Except String ByteArray) with
+  let bytes: ByteArray := LeanSerde.serialize empty
+  match (LeanSerde.deserialize bytes : Except String ByteArray) with
   | .error e => return TestResult.failure "ByteArray Empty" s!"Failed to deserialize: {e}"
   | .ok ba =>
     if empty.data == ba.data then
@@ -37,8 +37,8 @@ def test_bytearray_empty_impl : IO TestResult := do
 def test_subarray_impl : IO TestResult := do
   let arr := #[1, 2, 3, 4, 5]
   let sub := arr.toSubarray
-  let bytes: ByteArray := LeanSerial.serialize sub
-  match (LeanSerial.deserialize bytes : Except String (Subarray Nat)) with
+  let bytes: ByteArray := LeanSerde.serialize sub
+  match (LeanSerde.deserialize bytes : Except String (Subarray Nat)) with
   | .error e => return TestResult.failure "Subarray" s!"Failed to deserialize: {e}"
   | .ok deserialized =>
     if sub.toArray == deserialized.toArray then

@@ -1,7 +1,7 @@
 import Lean.Data.Json
 import Std.Data.HashMap
 
-namespace LeanSerial
+namespace LeanSerde
 
 inductive SerialValue where
   | str : String → SerialValue
@@ -164,4 +164,4 @@ def decodeCompound (expectedName : String) (sv : SerialValue) : DecodeM (Array S
     else .error s!"Expected {expectedName}, got {name}"
   | other => .error s!"Expected compound {expectedName}, got {repr other}"
 
-end LeanSerial
+end LeanSerde

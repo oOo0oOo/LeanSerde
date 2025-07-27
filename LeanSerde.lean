@@ -1,13 +1,13 @@
-import LeanSerial.Core
-import LeanSerial.CBOR
-import LeanSerial.Derive
-import LeanSerial.PrimitiveTypes
-import LeanSerial.ContainerTypes
-import LeanSerial.LibraryTypes
-import LeanSerial.TimeTypes
-import LeanSerial.MetaTypes
+import LeanSerde.Core
+import LeanSerde.CBOR
+import LeanSerde.Derive
+import LeanSerde.PrimitiveTypes
+import LeanSerde.ContainerTypes
+import LeanSerde.LibraryTypes
+import LeanSerde.TimeTypes
+import LeanSerde.MetaTypes
 
-namespace LeanSerial
+namespace LeanSerde
 
 def serialize {α β} [Serializable α] [SerializableFormat β] (value : α) : β :=
   SerializableFormat.serializeValue (encodeGraph value)
@@ -28,4 +28,4 @@ def serializeToJsonFile {α} [Serializable α] (value : α) (filePath : String) 
 def deserializeFromJsonFile {α} [Serializable α] (filePath : String) : IO (Except String α) := do
   deserialize <$> IO.FS.readFile filePath
 
-end LeanSerial
+end LeanSerde

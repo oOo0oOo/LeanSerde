@@ -2,20 +2,20 @@ import Lean
 import Lean.Data.KVMap
 import Lean.Meta.Diagnostics
 import Lean.Environment
-import LeanSerial.Derive
-import LeanSerial.PrimitiveTypes
-import LeanSerial.ContainerTypes
-import LeanSerial.LibraryTypes
+import LeanSerde.Derive
+import LeanSerde.PrimitiveTypes
+import LeanSerde.ContainerTypes
+import LeanSerde.LibraryTypes
 
 open Lean Environment
 
-namespace LeanSerial
+namespace LeanSerde
 
 -- Towards Level
-deriving instance LeanSerial.Serializable for Lean.Name, Lean.LevelMVarId, Lean.Level
+deriving instance LeanSerde.Serializable for Lean.Name, Lean.LevelMVarId, Lean.Level
 
 -- Towards Syntax
-deriving instance LeanSerial.Serializable for Lean.Syntax.Preresolved
+deriving instance LeanSerde.Serializable for Lean.Syntax.Preresolved
 
 instance : Serializable Lean.SourceInfo where
   encode si := match si with
@@ -46,10 +46,10 @@ instance : Serializable Lean.SourceInfo where
     | other =>
       .error s!"Expected SourceInfo compound, got {repr other}"
 
-deriving instance LeanSerial.Serializable for Lean.Syntax  -- Mega slow
+deriving instance LeanSerde.Serializable for Lean.Syntax  -- Mega slow
 
 -- Towards Expr
-deriving instance LeanSerial.Serializable for Lean.FVarId, Lean.MVarId, Lean.BinderInfo, Lean.Literal, Lean.DataValue
+deriving instance LeanSerde.Serializable for Lean.FVarId, Lean.MVarId, Lean.BinderInfo, Lean.Literal, Lean.DataValue
 
 instance : Serializable Lean.KVMap where
   encode m := .compound "KVMap" (m.entries.map (fun ⟨k, v⟩ => .compound "Entry" #[encode k, encode v]) |>.toArray)
@@ -64,22 +64,22 @@ instance : Serializable Lean.KVMap where
       | _ => .error s!"Expected Entry compound, got {repr entry}")
     .ok ⟨entries.toList⟩
 
-deriving instance LeanSerial.Serializable for Lean.Expr
+deriving instance LeanSerde.Serializable for Lean.Expr
 
 -- Towards MetavarContext
-deriving instance LeanSerial.Serializable for Lean.LocalDeclKind, Lean.LocalDecl
+deriving instance LeanSerde.Serializable for Lean.LocalDeclKind, Lean.LocalDecl
 
 instance {α : Type} [Serializable α] : Serializable (Lean.FVarIdMap α) :=
   inferInstanceAs (Serializable (Lean.RBMap Lean.FVarId α (Name.quickCmp ·.name ·.name)))
 
-deriving instance LeanSerial.Serializable for Lean.LocalContext, Lean.MetavarKind, Lean.LocalInstance
-deriving instance LeanSerial.Serializable for Lean.MetavarDecl, Lean.DelayedMetavarAssignment, Lean.MetavarContext
+deriving instance LeanSerde.Serializable for Lean.LocalContext, Lean.MetavarKind, Lean.LocalInstance
+deriving instance LeanSerde.Serializable for Lean.MetavarDecl, Lean.DelayedMetavarAssignment, Lean.MetavarContext
 
 -- Towards ConstantInfo
-deriving instance LeanSerial.Serializable for Lean.ConstantVal, Lean.AxiomVal, Lean.ReducibilityHints, Lean.DefinitionSafety
-deriving instance LeanSerial.Serializable for Lean.TheoremVal, Lean.OpaqueVal, Lean.QuotKind, Lean.QuotVal
-deriving instance LeanSerial.Serializable for Lean.ConstructorVal, Lean.InductiveVal, Lean.DefinitionVal
-deriving instance LeanSerial.Serializable for Lean.RecursorRule, Lean.RecursorVal, Lean.ConstantInfo
+deriving instance LeanSerde.Serializable for Lean.ConstantVal, Lean.AxiomVal, Lean.ReducibilityHints, Lean.DefinitionSafety
+deriving instance LeanSerde.Serializable for Lean.TheoremVal, Lean.OpaqueVal, Lean.QuotKind, Lean.QuotVal
+deriving instance LeanSerde.Serializable for Lean.ConstructorVal, Lean.InductiveVal, Lean.DefinitionVal
+deriving instance LeanSerde.Serializable for Lean.RecursorRule, Lean.RecursorVal, Lean.ConstantInfo
 
 
 -- Towards Environment (only partial serialization and deserialization)
@@ -87,7 +87,7 @@ instance : Serializable ModuleIdx where
   encode idx := .nat idx.toNat
   decode := fun | .nat n => .ok n | other => .error s!"Expected ModuleIdx, got {repr other}"
 
-deriving instance LeanSerial.Serializable for Lean.Import
+deriving instance LeanSerde.Serializable for Lean.Import
 
 instance [Serializable α] [Serializable β] [BEq α] [Hashable α] : Serializable (Lean.SMap α β) where
   encode m := .compound "SMap" (m.toList.map (fun ⟨k, v⟩ => .compound "Entry" #[encode k, encode v]) |>.toArray)
@@ -174,7 +174,7 @@ instance : Serializable Lean.CompactedRegion where
     | .nat n => .ok (USize.ofNat n)
     | other => .error s!"Expected CompactedRegion, got {repr other}"
 
-deriving instance LeanSerial.Serializable for Lean.EnvironmentHeader
+deriving instance LeanSerde.Serializable for Lean.EnvironmentHeader
 
 -- Can only serialize a subset of Environment
 structure EnvironmentData where
@@ -183,7 +183,7 @@ structure EnvironmentData where
   quotInit : Bool
   diagnostics : Kernel.Diagnostics
   header : EnvironmentHeader
-  deriving LeanSerial.Serializable
+  deriving LeanSerde.Serializable
 
 -- Helper function to add constant (following Lake pattern)
 @[extern "lake_environment_add"]
@@ -226,18 +226,18 @@ instance : Serializable Dynamic where
   encode _ := .compound "Dynamic.phantom" #[]
   decode _ := .ok (Dynamic.mk "phantom")
 
-deriving instance LeanSerial.Serializable for Lean.Widget.WidgetInstance, Lean.DeclarationRange
-deriving instance LeanSerial.Serializable for Lean.DeclarationLocation, Lean.Elab.MacroExpansionInfo
-deriving instance LeanSerial.Serializable for Lean.Elab.FieldInfo, Lean.Elab.OptionInfo
-deriving instance LeanSerial.Serializable for Lean.Elab.FieldRedeclInfo, Lean.Elab.FVarAliasInfo
-deriving instance LeanSerial.Serializable for Lean.Elab.UserWidgetInfo, Lean.Elab.CustomInfo
-deriving instance LeanSerial.Serializable for Lean.Elab.ElabInfo, Lean.Elab.ChoiceInfo
-deriving instance LeanSerial.Serializable for Lean.Elab.PartialTermInfo, Lean.Elab.TermInfo
-deriving instance LeanSerial.Serializable for Lean.Elab.CompletionInfo, Lean.Elab.DelabTermInfo
-deriving instance LeanSerial.Serializable for Lean.Elab.TacticInfo, Lean.Elab.CommandInfo
-deriving instance LeanSerial.Serializable for Lean.Elab.Info, Lean.NameGenerator
-deriving instance LeanSerial.Serializable for Lean.OpenDecl, Lean.FileMap
-deriving instance LeanSerial.Serializable for Lean.Elab.CommandContextInfo, Lean.Elab.PartialContextInfo
+deriving instance LeanSerde.Serializable for Lean.Widget.WidgetInstance, Lean.DeclarationRange
+deriving instance LeanSerde.Serializable for Lean.DeclarationLocation, Lean.Elab.MacroExpansionInfo
+deriving instance LeanSerde.Serializable for Lean.Elab.FieldInfo, Lean.Elab.OptionInfo
+deriving instance LeanSerde.Serializable for Lean.Elab.FieldRedeclInfo, Lean.Elab.FVarAliasInfo
+deriving instance LeanSerde.Serializable for Lean.Elab.UserWidgetInfo, Lean.Elab.CustomInfo
+deriving instance LeanSerde.Serializable for Lean.Elab.ElabInfo, Lean.Elab.ChoiceInfo
+deriving instance LeanSerde.Serializable for Lean.Elab.PartialTermInfo, Lean.Elab.TermInfo
+deriving instance LeanSerde.Serializable for Lean.Elab.CompletionInfo, Lean.Elab.DelabTermInfo
+deriving instance LeanSerde.Serializable for Lean.Elab.TacticInfo, Lean.Elab.CommandInfo
+deriving instance LeanSerde.Serializable for Lean.Elab.Info, Lean.NameGenerator
+deriving instance LeanSerde.Serializable for Lean.OpenDecl, Lean.FileMap
+deriving instance LeanSerde.Serializable for Lean.Elab.CommandContextInfo, Lean.Elab.PartialContextInfo
 
 partial def encodeInfoTree (it : Lean.Elab.InfoTree) : SerialValue :=
   match it with
@@ -284,63 +284,63 @@ instance {ks : SyntaxNodeKinds} : Serializable (TSyntax ks) where
 instance {ks : SyntaxNodeKinds} : Serializable (TSyntaxArray ks) :=
   inferInstanceAs (Serializable (Array (TSyntax ks)))
 
--- deriving instance LeanSerial.Serializable for Lean.Format
--- deriving instance LeanSerial.Serializable for Lean.Message
--- deriving instance LeanSerial.Serializable for IO.Ref
--- deriving instance LeanSerial.Serializable for Lean.Meta.FunInfoCache
--- deriving instance LeanSerial.Serializable for Lean.Meta.InferTypeCache
--- deriving instance LeanSerial.Serializable for Lean.Meta.SynthInstanceCache
--- deriving instance LeanSerial.Serializable for Lean.Elab.MacroStack
--- deriving instance LeanSerial.Serializable for Lean.Term
+-- deriving instance LeanSerde.Serializable for Lean.Format
+-- deriving instance LeanSerde.Serializable for Lean.Message
+-- deriving instance LeanSerde.Serializable for IO.Ref
+-- deriving instance LeanSerde.Serializable for Lean.Meta.FunInfoCache
+-- deriving instance LeanSerde.Serializable for Lean.Meta.InferTypeCache
+-- deriving instance LeanSerde.Serializable for Lean.Meta.SynthInstanceCache
+-- deriving instance LeanSerde.Serializable for Lean.Elab.MacroStack
+-- deriving instance LeanSerde.Serializable for Lean.Term
 
--- deriving instance LeanSerial.Serializable for Lean.Elab.PartialFixpoint.PartialFixpointType
--- deriving instance LeanSerial.Serializable for Lean.Elab.PartialFixpoint.EqnInfo
--- deriving instance LeanSerial.Serializable for Lean.Elab.PartialFixpoint.FixedParamPerm
--- deriving instance LeanSerial.Serializable for Lean.Elab.PartialFixpoint.FixedParamPerms
--- deriving instance LeanSerial.Serializable for Lean.Elab.PartialFixpoint
+-- deriving instance LeanSerde.Serializable for Lean.Elab.PartialFixpoint.PartialFixpointType
+-- deriving instance LeanSerde.Serializable for Lean.Elab.PartialFixpoint.EqnInfo
+-- deriving instance LeanSerde.Serializable for Lean.Elab.PartialFixpoint.FixedParamPerm
+-- deriving instance LeanSerde.Serializable for Lean.Elab.PartialFixpoint.FixedParamPerms
+-- deriving instance LeanSerde.Serializable for Lean.Elab.PartialFixpoint
 
--- deriving instance LeanSerial.Serializable for Lean.Elab.DecreasingBy
--- deriving instance LeanSerial.Serializable for Lean.Elab.TerminationBy
--- deriving instance LeanSerial.Serializable for Lean.AttributeKind
--- deriving instance LeanSerial.Serializable for Lean.TraceData
--- deriving instance LeanSerial.Serializable for Lean.NamingContext
--- deriving instance LeanSerial.Serializable for Lean.Meta.DefEqContext
--- deriving instance LeanSerial.Serializable for Lean.Elab.TerminationHints
--- deriving instance LeanSerial.Serializable for Lean.Elab.Attribute
--- deriving instance LeanSerial.Serializable for Lean.FormatWithInfos
--- deriving instance LeanSerial.Serializable for Lean.MessageDataContext
--- deriving instance LeanSerial.Serializable for Lean.MessageData
--- deriving instance LeanSerial.Serializable for Lean.Elab.Term.MVarErrorKind
--- deriving instance LeanSerial.Serializable for Lean.TraceElem
--- deriving instance LeanSerial.Serializable for Lean.Elab.Term.TacticMVarKind
--- deriving instance LeanSerial.Serializable for Lean.Elab.Term.SavedContext
--- deriving instance LeanSerial.Serializable for Lean.Meta.Diagnostics
--- deriving instance LeanSerial.Serializable for Lean.MessageLog
--- deriving instance LeanSerial.Serializable for Lean.Meta.PostponedEntry
--- deriving instance LeanSerial.Serializable for Lean.Meta.Cache
--- deriving instance LeanSerial.Serializable for Lean.TraceState
--- deriving instance LeanSerial.Serializable for Lean.Language.Snapshot.Diagnostics
--- deriving instance LeanSerial.Serializable for Lean.Language.Snapshot
--- deriving instance LeanSerial.Serializable for Lean.Language.SnapshotTree
--- deriving instance LeanSerial.Serializable for Lean.Language.SnapshotTask
--- deriving instance LeanSerial.Serializable for Lean.Elab.InfoState
--- deriving instance LeanSerial.Serializable for Lean.Core.Cache
--- deriving instance LeanSerial.Serializable for Lean.Elab.Term.LetRecToLift
--- deriving instance LeanSerial.Serializable for Lean.Elab.Term.LevelMVarErrorInfo
--- deriving instance LeanSerial.Serializable for Lean.Elab.Term.MVarErrorInfo
--- deriving instance LeanSerial.Serializable for Lean.Elab.Term.SyntheticMVarKind
--- deriving instance LeanSerial.Serializable for Lean.Elab.Term.SyntheticMVarDecl
--- deriving instance LeanSerial.Serializable for Lean.DeclNameGenerator
--- deriving instance LeanSerial.Serializable for Lean.Meta.State
--- deriving instance LeanSerial.Serializable for Lean.Core.State
--- deriving instance LeanSerial.Serializable for Lean.Core.SavedState
--- deriving instance LeanSerial.Serializable for Lean.Elab.Term.State
--- deriving instance LeanSerial.Serializable for Lean.Meta.SavedState
--- deriving instance LeanSerial.Serializable for Lean.Elab.Tactic.State
--- deriving instance LeanSerial.Serializable for Lean.Elab.Term.SavedState
--- deriving instance LeanSerial.Serializable for Lean.Elab.Tactic.SavedState
+-- deriving instance LeanSerde.Serializable for Lean.Elab.DecreasingBy
+-- deriving instance LeanSerde.Serializable for Lean.Elab.TerminationBy
+-- deriving instance LeanSerde.Serializable for Lean.AttributeKind
+-- deriving instance LeanSerde.Serializable for Lean.TraceData
+-- deriving instance LeanSerde.Serializable for Lean.NamingContext
+-- deriving instance LeanSerde.Serializable for Lean.Meta.DefEqContext
+-- deriving instance LeanSerde.Serializable for Lean.Elab.TerminationHints
+-- deriving instance LeanSerde.Serializable for Lean.Elab.Attribute
+-- deriving instance LeanSerde.Serializable for Lean.FormatWithInfos
+-- deriving instance LeanSerde.Serializable for Lean.MessageDataContext
+-- deriving instance LeanSerde.Serializable for Lean.MessageData
+-- deriving instance LeanSerde.Serializable for Lean.Elab.Term.MVarErrorKind
+-- deriving instance LeanSerde.Serializable for Lean.TraceElem
+-- deriving instance LeanSerde.Serializable for Lean.Elab.Term.TacticMVarKind
+-- deriving instance LeanSerde.Serializable for Lean.Elab.Term.SavedContext
+-- deriving instance LeanSerde.Serializable for Lean.Meta.Diagnostics
+-- deriving instance LeanSerde.Serializable for Lean.MessageLog
+-- deriving instance LeanSerde.Serializable for Lean.Meta.PostponedEntry
+-- deriving instance LeanSerde.Serializable for Lean.Meta.Cache
+-- deriving instance LeanSerde.Serializable for Lean.TraceState
+-- deriving instance LeanSerde.Serializable for Lean.Language.Snapshot.Diagnostics
+-- deriving instance LeanSerde.Serializable for Lean.Language.Snapshot
+-- deriving instance LeanSerde.Serializable for Lean.Language.SnapshotTree
+-- deriving instance LeanSerde.Serializable for Lean.Language.SnapshotTask
+-- deriving instance LeanSerde.Serializable for Lean.Elab.InfoState
+-- deriving instance LeanSerde.Serializable for Lean.Core.Cache
+-- deriving instance LeanSerde.Serializable for Lean.Elab.Term.LetRecToLift
+-- deriving instance LeanSerde.Serializable for Lean.Elab.Term.LevelMVarErrorInfo
+-- deriving instance LeanSerde.Serializable for Lean.Elab.Term.MVarErrorInfo
+-- deriving instance LeanSerde.Serializable for Lean.Elab.Term.SyntheticMVarKind
+-- deriving instance LeanSerde.Serializable for Lean.Elab.Term.SyntheticMVarDecl
+-- deriving instance LeanSerde.Serializable for Lean.DeclNameGenerator
+-- deriving instance LeanSerde.Serializable for Lean.Meta.State
+-- deriving instance LeanSerde.Serializable for Lean.Core.State
+-- deriving instance LeanSerde.Serializable for Lean.Core.SavedState
+-- deriving instance LeanSerde.Serializable for Lean.Elab.Term.State
+-- deriving instance LeanSerde.Serializable for Lean.Meta.SavedState
+-- deriving instance LeanSerde.Serializable for Lean.Elab.Tactic.State
+-- deriving instance LeanSerde.Serializable for Lean.Elab.Term.SavedState
+-- deriving instance LeanSerde.Serializable for Lean.Elab.Tactic.SavedState
 
 -- Various
-deriving instance LeanSerial.Serializable for Lean.Widget.UserWidgetDefinition
+deriving instance LeanSerde.Serializable for Lean.Widget.UserWidgetDefinition
 
-end LeanSerial
+end LeanSerde

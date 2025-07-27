@@ -1,6 +1,6 @@
-import LeanSerial.Core
+import LeanSerde.Core
 
-namespace LeanSerial
+namespace LeanSerde
 
 -- Primitive Types: Numeric
 instance : Serializable Nat where
@@ -102,7 +102,7 @@ instance : Serializable String where
     | .str s => .ok s
     | other => .error s!"Expected String, got {repr other}"
 
-instance : LeanSerial.Serializable String.Pos where
+instance : LeanSerde.Serializable String.Pos where
   encode pos := .compound "StringPos" #[.nat pos.byteIdx]
   decode sv := do
     match sv with
@@ -157,4 +157,4 @@ instance : Serializable Unit where
     | .compound "Unit" #[] => .ok ()
     | other => .error s!"Expected Unit, got {repr other}"
 
-end LeanSerial
+end LeanSerde

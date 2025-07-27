@@ -1,5 +1,5 @@
 import Tests.TestFramework
-import LeanSerial
+import LeanSerde
 import Std.Data.HashMap
 import Std.Data.HashSet
 import Lean.Data.Json
@@ -13,8 +13,8 @@ namespace LibraryTests
 
 def test_hashmap_impl : IO TestResult := do
   let hm1 := Std.HashMap.ofList [(1, "one"), (2, "two"), (3, "three")]
-  let bytes: ByteArray := LeanSerial.serialize hm1
-  match (LeanSerial.deserialize bytes : Except String (Std.HashMap Nat String)) with
+  let bytes: ByteArray := LeanSerde.serialize hm1
+  match (LeanSerde.deserialize bytes : Except String (Std.HashMap Nat String)) with
   | .error e => return TestResult.failure "HashMap" s!"Failed to deserialize: {e}"
   | .ok hm2 =>
     let list1 := hm1.toList.toArray.qsort (fun a b => a.1 < b.1)
@@ -34,8 +34,8 @@ def test_hashmap : IO Unit := do
 
 def test_hashset_impl : IO TestResult := do
   let hs1 := Std.HashSet.ofList [1, 2, 3]
-  let bytes: ByteArray := LeanSerial.serialize hs1
-  match (LeanSerial.deserialize bytes : Except String (Std.HashSet Nat)) with
+  let bytes: ByteArray := LeanSerde.serialize hs1
+  match (LeanSerde.deserialize bytes : Except String (Std.HashSet Nat)) with
   | .error e => return TestResult.failure "HashSet" s!"Failed to deserialize: {e}"
   | .ok hs2 =>
     let list1 := hs1.toList.toArray.qsort (· < ·)
@@ -56,8 +56,8 @@ def test_hashset : IO Unit := do
 def test_rbmap_impl : IO TestResult := do
   let rb1 : Lean.RBMap Nat String compare :=
     Lean.RBMap.empty.insert 1 "one" |>.insert 2 "two" |>.insert 3 "three"
-  let bytes: ByteArray := LeanSerial.serialize rb1
-  match (LeanSerial.deserialize bytes : Except String (Lean.RBMap Nat String compare)) with
+  let bytes: ByteArray := LeanSerde.serialize rb1
+  match (LeanSerde.deserialize bytes : Except String (Lean.RBMap Nat String compare)) with
   | .error e => return TestResult.failure "RBMap" s!"Failed to deserialize: {e}"
   | .ok rb2 =>
     let list1 := rb1.toList.toArray.qsort (fun a b => a.1 < b.1)
@@ -78,8 +78,8 @@ def test_rbmap : IO Unit := do
 -- PersistentHashMap
 def test_persistent_hashmap_impl : IO TestResult := do
   let phm1 := Lean.PersistentHashMap.empty.insert 1 "one" |>.insert 2 "two" |>.insert 3 "three"
-  let bytes: ByteArray := LeanSerial.serialize phm1
-  match (LeanSerial.deserialize bytes : Except String (Lean.PersistentHashMap Nat String)) with
+  let bytes: ByteArray := LeanSerde.serialize phm1
+  match (LeanSerde.deserialize bytes : Except String (Lean.PersistentHashMap Nat String)) with
   | .error e => return TestResult.failure "PersistentHashMap" s!"Failed to deserialize: {e}"
   | .ok phm2 =>
     let list1 := phm1.toList.toArray.qsort (fun a b => a.1 < b.1)

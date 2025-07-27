@@ -1,6 +1,6 @@
-import LeanSerial
+import LeanSerde
 
-open LeanSerial
+open LeanSerde
 
 namespace TestFramework
 
@@ -47,8 +47,8 @@ def test_roundtrip {α} [Serializable α] [BEq α] (testName: String) (value : �
 
     -- Test to/from file JSON
     let filePath := s!"{testName}.test"
-    LeanSerial.serializeToJsonFile value filePath
-    let fileValue : Except String α ← LeanSerial.deserializeFromJsonFile filePath
+    LeanSerde.serializeToJsonFile value filePath
+    let fileValue : Except String α ← LeanSerde.deserializeFromJsonFile filePath
     match fileValue with
     | .error e =>
       return TestResult.failure testName s!"Failed to deserialize from JSON file: {e}"
@@ -57,8 +57,8 @@ def test_roundtrip {α} [Serializable α] [BEq α] (testName: String) (value : �
         return TestResult.failure testName "Value mismatch after file JSON roundtrip"
 
     -- Test to/from file CBOR
-    LeanSerial.serializeToFile value filePath
-    let fileValueCBOR : Except String α ← LeanSerial.deserializeFromFile filePath
+    LeanSerde.serializeToFile value filePath
+    let fileValueCBOR : Except String α ← LeanSerde.deserializeFromFile filePath
     match fileValueCBOR with
     | .error e =>
       return TestResult.failure testName s!"Failed to deserialize from CBOR file: {e}"

@@ -1,6 +1,6 @@
-import LeanSerial.Core
+import LeanSerde.Core
 
-namespace LeanSerial.CBOR
+namespace LeanSerde.CBOR
 
 private inductive MajorType : Type where
   | unsignedInt | negativeInt | byteString | textString
@@ -188,4 +188,4 @@ instance : SerializableFormat ByteArray where
   serializeValue := encodeGraphToCBOR
   deserializeValue := decodeGraphFromCBOR
 
-end LeanSerial.CBOR
+end LeanSerde.CBOR

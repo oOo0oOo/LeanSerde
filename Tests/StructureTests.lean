@@ -1,5 +1,5 @@
 import Tests.TestFramework
-import LeanSerial
+import LeanSerde
 
 open TestFramework
 
@@ -9,25 +9,25 @@ namespace StructureTests
 structure TestData where
   name : String
   value : Nat
-  deriving LeanSerial.Serializable, BEq
+  deriving LeanSerde.Serializable, BEq
 
 structure TestData2 where
   id : Nat
   data : TestData
   flag : Bool
   flag2 : Bool := false
-  deriving LeanSerial.Serializable, BEq
+  deriving LeanSerde.Serializable, BEq
 
 structure TestData3 where
   items : List TestData
   items2 : Array TestData2
   optionalField : Option String := none
-  deriving LeanSerial.Serializable, BEq
+  deriving LeanSerde.Serializable, BEq
 
 structure TestData4 where
   nested : TestData3
   metadata : Option (String × Nat) := none
-  deriving LeanSerial.Serializable, BEq
+  deriving LeanSerde.Serializable, BEq
 
 def test_simple_structure : IO TestResult := do
   let testData := TestData.mk "Test" 100
@@ -71,13 +71,13 @@ inductive TestInductive
 | runtime
 | comptime
 | all
-deriving LeanSerial.Serializable, BEq
+deriving LeanSerde.Serializable, BEq
 
 inductive TestInductive2
 | single : Nat → TestInductive2
 | multi : String → Bool → TestInductive2
 | complex : Nat → Bool → String → Bool → Bool → Bool → String → Bool → Bool → TestInductive2
-deriving LeanSerial.Serializable, BEq
+deriving LeanSerde.Serializable, BEq
 
 inductive TestInductive3
 | empty : TestInductive3
@@ -85,25 +85,25 @@ inductive TestInductive3
 | case2 : String → TestInductive3
 | case3 : Bool → TestInductive3
 | case4 : Nat → String → TestInductive3
-deriving LeanSerial.Serializable, BEq
+deriving LeanSerde.Serializable, BEq
 
 -- Mutually recursive inductive
 inductive TestInductive5
 | leaf : TestInductive5
 | zero : List TestInductive5 → TestInductive5
-deriving LeanSerial.Serializable, BEq
+deriving LeanSerde.Serializable, BEq
 
 inductive TestInductive6
 | case1 : TestInductive5 → TestInductive6
 | case2 : Array TestInductive6 → TestInductive5 → TestInductive6
-deriving LeanSerial.Serializable, BEq
+deriving LeanSerde.Serializable, BEq
 
 inductive TestInductive7
 | case1 : Nat → TestInductive7
 | case2 : TestInductive7 → TestInductive7 → TestInductive7
 | case3 : TestInductive6 → TestInductive7
 | case4 : TestInductive7 → List TestInductive6 → TestInductive5 → TestInductive7
-deriving LeanSerial.Serializable, BEq
+deriving LeanSerde.Serializable, BEq
 
 structure TestContainers where
   optionalValue : Option String
@@ -112,13 +112,13 @@ structure TestContainers where
   listOfOptions : List (Option Nat)
   arrayOfPairs : Array (Nat × Bool)
   optionalPair : Option (String × Nat)
-  deriving LeanSerial.Serializable, BEq
+  deriving LeanSerde.Serializable, BEq
 
 -- Cyclic
 inductive Tree where
   | leaf : Nat → Tree
   | node : Tree → Tree → Tree
-  deriving LeanSerial.Serializable, BEq
+  deriving LeanSerde.Serializable, BEq
 
 def test_simple_inductive : IO TestResult := do
   let value := TestInductive.none
@@ -215,23 +215,23 @@ namespace PolymorphicTests
 -- Test polymorphic types
 inductive MyPair (α β : Type) where
   | mk (a : α) (b : β)
-  deriving LeanSerial.Serializable, BEq
+  deriving LeanSerde.Serializable, BEq
 
 inductive MyOption (α : Type) where
   | none
   | some (value : α)
-  deriving LeanSerial.Serializable, BEq
+  deriving LeanSerde.Serializable, BEq
 
 inductive MyList (α : Type) where
   | nil
   | cons (head : α) (tail : MyList α)
-  deriving LeanSerial.Serializable, BEq
+  deriving LeanSerde.Serializable, BEq
 
 structure Container (α β : Type) where
   first : α
   second : β
   items : List α
-  deriving LeanSerial.Serializable, BEq
+  deriving LeanSerde.Serializable, BEq
 
 -- Test instances
 def test_polymorphic_pair : IO TestResult := do
@@ -267,7 +267,7 @@ def test_nested_polymorphic : IO TestResult := do
 -- Test with multiple type parameters
 inductive Triple (α β γ : Type) where
   | mk (a : α) (b : β) (c : γ)
-  deriving LeanSerial.Serializable, BEq
+  deriving LeanSerde.Serializable, BEq
 
 def test_triple : IO TestResult := do
   let triple : Triple String Nat Bool := Triple.mk "hello" 42 true
@@ -292,11 +292,11 @@ namespace RefsTests
 structure SimpleNode where
   value : Nat
   name : String
-  deriving LeanSerial.Serializable, BEq
+  deriving LeanSerde.Serializable, BEq
 
 structure NodeContainer where
   nodes : Array SimpleNode
-  deriving LeanSerial.Serializable, BEq
+  deriving LeanSerde.Serializable, BEq
 
 def test_simple_refs : IO TestResult := do
   -- Create a shared node that appears multiple times
@@ -330,7 +330,7 @@ def test_no_refs_format : IO TestResult := do
   let uniqueNode2 := SimpleNode.mk 200 "second"
   let container := NodeContainer.mk #[uniqueNode1, uniqueNode2]
 
-  let serialized : String := LeanSerial.serialize container
+  let serialized : String := LeanSerde.serialize container
 
   -- Should be simple array format, not graph format with "root" and "objects"
   if stringContains serialized "\"root\"" || stringContains serialized "\"objects\"" then
@@ -347,7 +347,7 @@ def test_refs_format : IO TestResult := do
   let sharedNode := SimpleNode.mk 42 "shared"
   let container := NodeContainer.mk #[sharedNode, sharedNode, sharedNode, sharedNode]
 
-  let serialized : String := LeanSerial.serialize container
+  let serialized : String := LeanSerde.serialize container
 
   -- Should be graph format with "root" and "objects"
   if !stringContains serialized "\"root\"" || !stringContains serialized "\"objects\"" then

@@ -3,7 +3,7 @@ import Lean.Elab
 import Lean.Meta
 
 import Tests.TestFramework
-import LeanSerial
+import LeanSerde
 
 
 open TestFramework Lean Elab Meta Term Command
@@ -71,8 +71,8 @@ def test_local_context : IO TestResult := do
   let context := LocalContext.empty.addDecl localDecl1 |>.addDecl localDecl2
 
   -- Test roundtrip manually
-  let bytes: ByteArray := LeanSerial.serialize context
-  match (LeanSerial.deserialize bytes : Except String LocalContext) with
+  let bytes: ByteArray := LeanSerde.serialize context
+  match (LeanSerde.deserialize bytes : Except String LocalContext) with
   | .error e => return TestResult.failure "LocalContext" s!"Failed to deserialize: {e}"
   | .ok decoded =>
     -- Compare contexts by checking individual declarations
@@ -97,8 +97,8 @@ def test_metavar_context : IO TestResult := do
   ) { fileName := "", fileMap := default } { env := initEnv } {} {}
 
   let (mctx, _, _) := result
-  let bytes: ByteArray := LeanSerial.serialize mctx
-  match (LeanSerial.deserialize bytes : Except String MetavarContext) with
+  let bytes: ByteArray := LeanSerde.serialize mctx
+  match (LeanSerde.deserialize bytes : Except String MetavarContext) with
   | .error e => return TestResult.failure "MetavarContext" s!"Failed to deserialize: {e}"
   | .ok decoded =>
     -- Compare a few fields to ensure some correctness
@@ -119,8 +119,8 @@ def test_constant_info : IO TestResult := do
     isUnsafe := false
   }
 
-  let bytes: ByteArray := LeanSerial.serialize constInfo
-  match (LeanSerial.deserialize bytes : Except String ConstantInfo) with
+  let bytes: ByteArray := LeanSerde.serialize constInfo
+  match (LeanSerde.deserialize bytes : Except String ConstantInfo) with
   | .error e => return TestResult.failure "ConstantInfo" s!"Failed to deserialize: {e}"
   | .ok decoded =>
     if constInfo.name == decoded.name &&
@@ -132,8 +132,8 @@ def test_constant_info : IO TestResult := do
 
 def test_empty_environment : IO TestResult := do
   let env ← Lean.mkEmptyEnvironment
-  let bytes: ByteArray := LeanSerial.serialize env
-  match (LeanSerial.deserialize bytes : Except String Environment) with
+  let bytes: ByteArray := LeanSerde.serialize env
+  match (LeanSerde.deserialize bytes : Except String Environment) with
   | .error e => return TestResult.failure "Environment" s!"Failed to deserialize: {e}"
   | .ok decoded =>
     if env.mainModule == decoded.mainModule &&
@@ -150,8 +150,8 @@ def test_info_tree : IO TestResult := do
   let mvarId := { name := Name.mkSimple "testMVar" : MVarId }
   let infoTreeHole := Lean.Elab.InfoTree.hole mvarId
 
-  let bytes: ByteArray := LeanSerial.serialize infoTreeHole
-  match (LeanSerial.deserialize bytes : Except String Lean.Elab.InfoTree) with
+  let bytes: ByteArray := LeanSerde.serialize infoTreeHole
+  match (LeanSerde.deserialize bytes : Except String Lean.Elab.InfoTree) with
   | .error e => return TestResult.failure "InfoTree" s!"Failed to deserialize: {e}"
   | .ok decoded =>
     match infoTreeHole, decoded with
