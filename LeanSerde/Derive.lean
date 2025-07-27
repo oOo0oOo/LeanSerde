@@ -12,10 +12,11 @@ structure ConstructorData where
   ctorApp : TSyntax `term
   decodeStmts : Array (TSyntax `doElem)
 
-private def mkFieldName (i : Nat) : Name := Name.mkSimple s!"field{i}"
+private def mkFieldName (i : Nat) : Name := Name.mkSimple s!"x{i}"
 
-private def mkAuxFunctionName (name: String) (typeId : TSyntax `ident) : Ident :=
-  mkIdent (Name.mkSimple s!"{name}_impl_{typeId}")
+private def mkAuxFunctionName (name: String) (typeName : Name) : Ident :=
+  let typeNameStr := typeName.toString.replace "." "_"
+  mkIdent (Name.mkSimple s!"{name}_{typeNameStr}")
 
 private def generateContainerEncode (fieldType : Expr) (fieldTerm : TSyntax `term) (encodeFnName : Ident) : CommandElabM (TSyntax `term) := do
   match fieldType with
@@ -35,20 +36,20 @@ private def generateContainerEncode (fieldType : Expr) (fieldTerm : TSyntax `ter
         (fun x => LeanSerde.SerialValue.compound "Sum" #[LeanSerde.SerialValue.str "inr", $encodeFnName:ident x]))
   | _ => throwError "Invalid container type"
 
-private def generateContainerDecode (fieldType : Expr) (fieldId : Ident) (index : Nat) (decodeFnName : Ident) : CommandElabM (List (TSyntax `doElem)) := do
+private def generateContainerDecode (fieldType : Expr) (fieldId : Ident) (index : Nat) (decodeFnName : Ident) : CommandElabM (Array (TSyntax `doElem)) := do
   match fieldType with
-  | .app (.const `List _) _ => pure [
+  | .app (.const `List _) _ => pure #[
       ← `(doElem| let containerSv := args[$(quote index)]!),
       ← `(doElem| let containerArgs ← LeanSerde.decodeCompound "List" containerSv),
       ← `(doElem| let listResult ← containerArgs.mapM $decodeFnName:ident),
       ← `(doElem| let $fieldId := listResult.toList)
     ]
-  | .app (.const `Array _) _ => pure [
+  | .app (.const `Array _) _ => pure #[
       ← `(doElem| let containerSv := args[$(quote index)]!),
       ← `(doElem| let containerArgs ← LeanSerde.decodeCompound "Array" containerSv),
       ← `(doElem| let $fieldId ← containerArgs.mapM $decodeFnName:ident)
     ]
-  | .app (.const `Option _) _ => pure [
+  | .app (.const `Option _) _ => pure #[
       ← `(doElem| let containerSv := args[$(quote index)]!),
       ← `(doElem| let containerArgs ← LeanSerde.decodeCompound "Option" containerSv),
       ← `(doElem| let $fieldId ← do
@@ -60,7 +61,7 @@ private def generateContainerDecode (fieldType : Expr) (fieldId : Ident) (index 
         else
           throw "Invalid Option format")
     ]
-  | .app (.app (.const `Prod _) _) _ => pure [
+  | .app (.app (.const `Prod _) _) _ => pure #[
       ← `(doElem| let containerSv := args[$(quote index)]!),
       ← `(doElem| let containerArgs ← LeanSerde.decodeCompound "Prod" containerSv),
       ← `(doElem| let $fieldId ← do
@@ -71,7 +72,7 @@ private def generateContainerDecode (fieldType : Expr) (fieldId : Ident) (index 
         else
           throw "Invalid Prod format")
     ]
-  | .app (.app (.const `Sum _) _) _ => pure [
+  | .app (.app (.const `Sum _) _) _ => pure #[
       ← `(doElem| let containerSv := args[$(quote index)]!),
       ← `(doElem| let containerArgs ← LeanSerde.decodeCompound "Sum" containerSv),
       ← `(doElem| let $fieldId ← do
@@ -105,14 +106,14 @@ private def extractTypeParameters (inductVal : InductiveVal) : CommandElabM (Arr
         typeParams := typeParams.push localDecl.userName
       return typeParams
 
-private def mkConstructorData (typeId : TSyntax `ident) (inductVal : InductiveVal) (ctor : ConstructorVal) : CommandElabM ConstructorData := do
+private def mkConstructorData (inductVal : InductiveVal) (ctor : ConstructorVal) (isStructure : Bool) : CommandElabM ConstructorData := do
   let ctorId := mkIdent ctor.name
 
   if ctor.numFields = 0 then
     return {
       encodePattern := ⟨ctorId⟩,
       encodeElems := #[],
-      name := ctor.name.toString,
+      name := ctor.name.toString.split (· == '.') |>.getLast!,
       ctorApp := ⟨ctorId⟩,
       decodeStmts := #[]
     }
@@ -120,8 +121,8 @@ private def mkConstructorData (typeId : TSyntax `ident) (inductVal : InductiveVa
   let fieldIds := (Array.range ctor.numFields).map (mkIdent ∘ mkFieldName)
   let fieldTerms := fieldIds.map fun fieldId => ⟨fieldId⟩
 
-  let encodeFnName := mkAuxFunctionName "encode" typeId
-  let decodeFnName := mkAuxFunctionName "decode" typeId
+  let encodeFnName := mkAuxFunctionName "encode" inductVal.name
+  let decodeFnName := mkAuxFunctionName "decode" inductVal.name
 
   let ctorInfo ← getConstInfoCtor ctor.name
   let fieldTypes ← liftTermElabM do
@@ -143,62 +144,70 @@ private def mkConstructorData (typeId : TSyntax `ident) (inductVal : InductiveVa
       | _ => false
 
     let encodeElem ← if isDirectRecursive then
-      `($encodeFnName:ident $fieldTerm)
+      `($encodeFnName $fieldTerm)
     else if isSimpleContainer then
       generateContainerEncode fieldType fieldTerm encodeFnName
     else
       `(LeanSerde.encode $fieldTerm)
 
     let decodeStmt ← if isDirectRecursive then
-      pure #[← `(doElem| let $fieldId ← $decodeFnName:ident args[$(quote i)]!)]
+      pure #[← `(doElem| let $fieldId ← $decodeFnName:ident (args[$(quote i)]!))]
     else if isSimpleContainer then
       let stmts ← generateContainerDecode fieldType fieldId i decodeFnName
-      pure stmts.toArray
+      pure stmts
     else
-      pure #[← `(doElem| let $fieldId ← LeanSerde.decode args[$(quote i)]!)]
+      pure #[← `(doElem| let $fieldId ← LeanSerde.decode (args[$(quote i)]!))]
 
     return (encodeElem, decodeStmt)
 
   let (encodeElems, decodeStmts) := result.unzip
   let decodeStmts := decodeStmts.flatten
 
-  let ctorApp ← fieldTerms.foldlM (fun acc fieldTerm => `($acc $fieldTerm)) (⟨ctorId⟩ : TSyntax `term)
+  let ctorApp ← if ctor.numFields == 0 then
+    pure (⟨ctorId⟩ : TSyntax `term)
+  else
+    `($ctorId $fieldTerms*)
 
   let encodePattern ←
     if ctor.numFields = 0 then
       pure ⟨ctorId⟩
     else
-      `($(ctorId) $fieldTerms*)
+      `($ctorId $fieldTerms*)
+
+  let ctorName := if isStructure then
+    inductVal.name.toString
+  else
+    ctor.name.toString.split (· == '.') |>.getLast!
 
   return {
     encodePattern := encodePattern,
     encodeElems := encodeElems,
-    name := ctor.name.toString.replace ".mk" "",
+    name := ctorName,
     ctorApp := ctorApp,
     decodeStmts := decodeStmts
   }
 
-private def mkSerializableQuotation (typeId : TSyntax `ident) (constructorData : Array ConstructorData) (constructorInfos : Array ConstructorVal) (isRecursive : Bool) (typeParams : Array Name) : CommandElabM (Array (TSyntax `command)) := do
+private def mkSerializableQuotation (typeId : TSyntax `ident) (constructorData : Array ConstructorData) (constructorInfos : Array ConstructorVal) (isRecursive : Bool) (typeParams : Array Name) (typeName : Name) : CommandElabM (Array (TSyntax `command)) := do
   let encodeMatches := constructorData.map fun cd =>
     (cd.encodePattern, cd.encodeElems, cd.name)
 
   let encodeArms ← encodeMatches.mapM fun (_, elems, name) =>
-    `(LeanSerde.SerialValue.compound $(quote name) #[$(elems),*])
+    `(LeanSerde.SerialValue.compound $(quote name) #[$elems,*])
 
   let decodeArms ← constructorData.mapIdxM fun i data => do
     let numFields := constructorInfos[i]!.numFields
-    `(doSeq|
-      if args.size = $(quote numFields) then do
-        $[$(data.decodeStmts):doElem]*
-        .ok $(data.ctorApp)
-      else
-        .error "Field count mismatch")
+    if data.decodeStmts.isEmpty then
+      `(if args.size != $(quote numFields) then throw "Field count mismatch" else return $(data.ctorApp))
+    else
+      `(if args.size != $(quote numFields) then throw "Field count mismatch" else do
+          $[$(data.decodeStmts):doElem]*
+          return $(data.ctorApp))
 
   let decodePatterns ← constructorData.mapM fun data => `($(quote data.name))
   let encodePatterns := constructorData.map (·.encodePattern)
 
-  let encodeFnName := mkAuxFunctionName "encode" typeId
-  let decodeFnName := mkAuxFunctionName "decode" typeId
+  let encodeFnName := mkAuxFunctionName "encode" typeName
+  let decodeFnName := mkAuxFunctionName "decode" typeName
 
   let polyTypeApp ← if typeParams.isEmpty then
     pure ⟨typeId⟩
@@ -211,49 +220,52 @@ private def mkSerializableQuotation (typeId : TSyntax `ident) (constructorData :
 
   let encodeDef ← if isRecursive then
     if typeParams.isEmpty then
-      `(partial def $encodeFnName (v : $typeId) : LeanSerde.SerialValue :=
+      `(private partial def $encodeFnName (v : $typeId) : LeanSerde.SerialValue :=
           match v with
           $[| $encodePatterns => $encodeArms]*)
     else
-      `(partial def $encodeFnName $instConstraints:bracketedBinder* (v : $polyTypeApp) : LeanSerde.SerialValue :=
+      `(private partial def $encodeFnName $instConstraints:bracketedBinder* (v : $polyTypeApp) : LeanSerde.SerialValue :=
           match v with
           $[| $encodePatterns => $encodeArms]*)
   else
     if typeParams.isEmpty then
-      `(def $encodeFnName (v : $typeId) : LeanSerde.SerialValue :=
+      `(private def $encodeFnName (v : $typeId) : LeanSerde.SerialValue :=
           match v with
           $[| $encodePatterns => $encodeArms]*)
     else
-      `(def $encodeFnName $instConstraints:bracketedBinder* (v : $polyTypeApp) : LeanSerde.SerialValue :=
+      `(private def $encodeFnName $instConstraints:bracketedBinder* (v : $polyTypeApp) : LeanSerde.SerialValue :=
           match v with
           $[| $encodePatterns => $encodeArms]*)
 
+  let decodeMatcher ← if constructorInfos.size == 1 then
+    pure decodeArms[0]!
+  else
+    `(match ctor with
+      $[| $decodePatterns => $decodeArms]*
+      | _ => .error "Unknown constructor")
+
   let decodeDef ← if isRecursive then
     if typeParams.isEmpty then
-      `(partial def $decodeFnName (sv : LeanSerde.SerialValue) : Except String $typeId := do
-          let .compound ctor args := sv | .error "Expected compound value"
-          match ctor with
-          $[| $decodePatterns => $decodeArms]*
-          | _ => .error "Unknown constructor")
+      `(private partial def $decodeFnName (sv : LeanSerde.SerialValue) : Except String $typeId :=
+          match sv with
+          | .compound ctor args => $decodeMatcher
+          | _ => .error "Expected compound value")
     else
-      `(partial def $decodeFnName $instConstraints:bracketedBinder* (sv : LeanSerde.SerialValue) : Except String $polyTypeApp := do
-          let .compound ctor args := sv | .error "Expected compound value"
-          match ctor with
-          $[| $decodePatterns => $decodeArms]*
-          | _ => .error "Unknown constructor")
+      `(private partial def $decodeFnName $instConstraints:bracketedBinder* (sv : LeanSerde.SerialValue) : Except String $polyTypeApp :=
+          match sv with
+          | .compound ctor args => $decodeMatcher
+          | _ => .error "Expected compound value")
   else
     if typeParams.isEmpty then
-      `(def $decodeFnName (sv : LeanSerde.SerialValue) : Except String $typeId := do
-          let .compound ctor args := sv | .error "Expected compound value"
-          match ctor with
-          $[| $decodePatterns => $decodeArms]*
-          | _ => .error "Unknown constructor")
+      `(private def $decodeFnName (sv : LeanSerde.SerialValue) : Except String $typeId :=
+          match sv with
+          | .compound ctor args => $decodeMatcher
+          | _ => .error "Expected compound value")
     else
-      `(def $decodeFnName $instConstraints:bracketedBinder* (sv : LeanSerde.SerialValue) : Except String $polyTypeApp := do
-          let .compound ctor args := sv | .error "Expected compound value"
-          match ctor with
-          $[| $decodePatterns => $decodeArms]*
-          | _ => .error "Unknown constructor")
+      `(private def $decodeFnName $instConstraints:bracketedBinder* (sv : LeanSerde.SerialValue) : Except String $polyTypeApp :=
+          match sv with
+          | .compound ctor args => $decodeMatcher
+          | _ => .error "Expected compound value")
 
   let inst ← if typeParams.isEmpty then
     `(instance : LeanSerde.Serializable $typeId where
@@ -285,8 +297,9 @@ def mkSerializableInstance (typeName : Name) : CommandElabM Unit := do
     if constructorInfosArray.isEmpty then
       throwError s!"Inductive type {typeName} has no constructors. Empty inductive types cannot be serialized."
 
-    let constructorData ← constructorInfosArray.mapM (mkConstructorData typeId inductVal ·)
-    let cmds ← mkSerializableQuotation typeId constructorData constructorInfosArray inductVal.isRec typeParams
+    let isStructure := isStructure env typeName
+    let constructorData ← constructorInfosArray.mapM (mkConstructorData inductVal · isStructure)
+    let cmds ← mkSerializableQuotation typeId constructorData constructorInfosArray inductVal.isRec typeParams typeName
 
     cmds.forM elabCommand
   | _ =>
