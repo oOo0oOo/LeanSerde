@@ -29,7 +29,7 @@ private def generateContainerEncode (fieldType : Expr) (fieldTerm : TSyntax `ter
         (LeanSerde.SerialValue.compound "Option.none" #[])
         (fun x => LeanSerde.SerialValue.compound "Option.some" #[$encodeFnName:ident x]))
   | .app (.app (.const `Prod _) _) _ =>
-    `(LeanSerde.SerialValue.compound "Prod" #[$encodeFnName:ident ($fieldTerm).fst, $encodeFnName:ident ($fieldTerm).snd])
+    `(LeanSerde.SerialValue.compound "Prod" #[$encodeFnName:ident ($fieldTerm).1, $encodeFnName:ident ($fieldTerm).2])
   | .app (.app (.const `Sum _) _) _ =>
     `(Sum.casesOn $fieldTerm
         (fun x => LeanSerde.SerialValue.compound "Sum.inl" #[$encodeFnName:ident x])
@@ -41,8 +41,8 @@ private def generateContainerDecode (fieldType : Expr) (fieldId : Ident) (index 
   | .app (.const `List _) _ => pure #[
       ← `(doElem| let containerSv := args[$(quote index)]!),
       ← `(doElem| let containerArgs ← LeanSerde.decodeCompound "List.cons" containerSv),
-      ← `(doElem| let listResult ← containerArgs.mapM $decodeFnName:ident),
-      ← `(doElem| let $fieldId := listResult.toList)
+      ← `(doElem| let elems ← containerArgs.mapM $decodeFnName:ident),
+      ← `(doElem| let $fieldId := elems.toList)
     ]
   | .app (.const `Array _) _ => pure #[
       ← `(doElem| let containerSv := args[$(quote index)]!),
@@ -51,41 +51,40 @@ private def generateContainerDecode (fieldType : Expr) (fieldId : Ident) (index 
     ]
   | .app (.const `Option _) _ => pure #[
       ← `(doElem| let containerSv := args[$(quote index)]!),
-      ← `(doElem| let $fieldId ← match containerSv with
+      ← `(doElem| let $fieldId ← (match containerSv with
         | LeanSerde.SerialValue.compound "Option.none" args =>
-          if args.size == 0 then return .none else throw "Invalid Option.none format"
+          if args.size == 0 then .ok .none else .error "Invalid Option.none format"
         | LeanSerde.SerialValue.compound "Option.some" args =>
           if args.size == 1 then do
             let val ← $decodeFnName:ident args[0]!
-            return (.some val)
-          else throw "Invalid Option.some format"
-        | _ => throw "Expected Option constructor")
+            .ok (.some val)
+          else .error "Invalid Option.some format"
+        | _ => .error "Expected Option constructor"))
     ]
   | .app (.app (.const `Prod _) _) _ => pure #[
       ← `(doElem| let containerSv := args[$(quote index)]!),
       ← `(doElem| let containerArgs ← LeanSerde.decodeCompound "Prod" containerSv),
-      ← `(doElem| let $fieldId ← do
-        if containerArgs.size == 2 then do
+      ← `(doElem| let $fieldId ← (if containerArgs.size == 2 then do
           let fst ← $decodeFnName:ident containerArgs[0]!
           let snd ← $decodeFnName:ident containerArgs[1]!
-          return (fst, snd)
+          .ok (fst, snd)
         else
-          throw "Invalid Prod format")
+          .error "Invalid Prod format"))
     ]
   | .app (.app (.const `Sum _) _) _ => pure #[
       ← `(doElem| let containerSv := args[$(quote index)]!),
-      ← `(doElem| let $fieldId ← match containerSv with
+      ← `(doElem| let $fieldId ← (match containerSv with
         | LeanSerde.SerialValue.compound "Sum.inl" args =>
           if args.size == 1 then do
             let val ← $decodeFnName:ident args[0]!
-            return (.inl val)
-          else throw "Invalid Sum.inl format"
+            .ok (.inl val)
+          else .error "Invalid Sum.inl format"
         | LeanSerde.SerialValue.compound "Sum.inr" args =>
           if args.size == 1 then do
             let val ← $decodeFnName:ident args[0]!
-            return (.inr val)
-          else throw "Invalid Sum.inr format"
-        | _ => throw "Expected Sum constructor")
+            .ok (.inr val)
+          else .error "Invalid Sum.inr format"
+        | _ => .error "Expected Sum constructor"))
     ]
   | _ => throwError "Invalid container type"
 
