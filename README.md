@@ -219,7 +219,7 @@ let file3 : FileNode := { name := "file3.txt", children := #[file1, file1], vali
 
 ### Automatic Format Description
 
-LeanSerde provides a `describeFormat` function to get a human-readable description of the serialization format for any type. This is severely limited and does not include all details. Use with caution.
+LeanSerde provides a `describeFormat` function to get a human-readable description of the serialization format for any type. This is severely limited and does not include all details. Only types with `Inhabited` and `Serializable` instances can be described.
 
 ```lean
 match LeanSerde.describeFormat FileNode with
