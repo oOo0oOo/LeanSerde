@@ -21,7 +21,7 @@ private def mkAuxFunctionName (name: String) (typeName : Name) : Ident :=
 private def generateContainerEncode (fieldType : Expr) (fieldTerm : TSyntax `term) (encodeFnName : Ident) : CommandElabM (TSyntax `term) := do
   match fieldType with
   | .app (.const `List _) _ =>
-    `(LeanSerde.SerialValue.compound "List" (($fieldTerm).map $encodeFnName:ident |>.toArray))
+    `(LeanSerde.SerialValue.compound "List.cons" (($fieldTerm).map $encodeFnName:ident |>.toArray))
   | .app (.const `Array _) _ =>
     `(LeanSerde.SerialValue.compound "Array" (($fieldTerm).map $encodeFnName:ident))
   | .app (.const `Option _) _ =>
@@ -40,7 +40,7 @@ private def generateContainerDecode (fieldType : Expr) (fieldId : Ident) (index 
   match fieldType with
   | .app (.const `List _) _ => pure #[
       ← `(doElem| let containerSv := args[$(quote index)]!),
-      ← `(doElem| let containerArgs ← LeanSerde.decodeCompound "List" containerSv),
+      ← `(doElem| let containerArgs ← LeanSerde.decodeCompound "List.cons" containerSv),
       ← `(doElem| let listResult ← containerArgs.mapM $decodeFnName:ident),
       ← `(doElem| let $fieldId := listResult.toList)
     ]
@@ -108,11 +108,16 @@ private def extractTypeParameters (inductVal : InductiveVal) : CommandElabM (Arr
 private def mkConstructorData (inductVal : InductiveVal) (ctor : ConstructorVal) (isStructure : Bool) : CommandElabM ConstructorData := do
   let ctorId := mkIdent ctor.name
 
+  let ctorName := if isStructure then
+    inductVal.name.toString.split (· == '.') |>.getLast!
+  else
+    ctor.name.toString
+
   if ctor.numFields = 0 then
     return {
       encodePattern := ⟨ctorId⟩,
       encodeElems := #[],
-      name := ctor.name.toString.split (· == '.') |>.getLast!,
+      name := ctorName,
       ctorApp := ⟨ctorId⟩,
       decodeStmts := #[]
     }
@@ -172,11 +177,6 @@ private def mkConstructorData (inductVal : InductiveVal) (ctor : ConstructorVal)
       pure ⟨ctorId⟩
     else
       `($ctorId $fieldTerms*)
-
-  let ctorName := if isStructure then
-    inductVal.name.toString
-  else
-    ctor.name.toString
 
   return {
     encodePattern := encodePattern,

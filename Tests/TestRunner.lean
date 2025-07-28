@@ -4,6 +4,7 @@ import Tests.ContainerTests
 import Tests.StructureTests
 import Tests.LibraryTests
 import Tests.MetaTests
+import Tests.DescribeTests
 
 open LeanSerde
 
@@ -34,7 +35,8 @@ def main : IO Unit := do
     runTestSuite "Polymorphic Structures" PolymorphicTests.run,
     runTestSuite "Library Types" LibraryTests.run,
     runTestSuite "Meta Types" MetaTests.run,
-    runTestSuite "Refs Format" RefsTests.run
+    runTestSuite "Refs Format" RefsTests.run,
+    runTestSuite "Describe Functionality" DescribeTests.run
   ].mapM id
 
   let totalTests := results.length

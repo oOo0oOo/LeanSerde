@@ -53,7 +53,6 @@ def test_subarray : IO Unit := do
   else
     IO.println s!"  ✗ Subarray: {result.error.getD "Unknown error"}"
 
-
 def test_bytearray : IO Unit := do
   let result1 ← test_bytearray_impl
   let result2 ← test_bytearray_empty_impl
