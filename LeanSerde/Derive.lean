@@ -26,14 +26,14 @@ private def generateContainerEncode (fieldType : Expr) (fieldTerm : TSyntax `ter
     `(LeanSerde.SerialValue.compound "Array" (($fieldTerm).map $encodeFnName:ident))
   | .app (.const `Option _) _ =>
     `(Option.casesOn $fieldTerm
-        (LeanSerde.SerialValue.compound "Option" #[LeanSerde.SerialValue.str "none"])
-        (fun x => LeanSerde.SerialValue.compound "Option" #[LeanSerde.SerialValue.str "some", $encodeFnName:ident x]))
+        (LeanSerde.SerialValue.compound "Option.none" #[])
+        (fun x => LeanSerde.SerialValue.compound "Option.some" #[$encodeFnName:ident x]))
   | .app (.app (.const `Prod _) _) _ =>
     `(LeanSerde.SerialValue.compound "Prod" #[$encodeFnName:ident ($fieldTerm).fst, $encodeFnName:ident ($fieldTerm).snd])
   | .app (.app (.const `Sum _) _) _ =>
     `(Sum.casesOn $fieldTerm
-        (fun x => LeanSerde.SerialValue.compound "Sum" #[LeanSerde.SerialValue.str "inl", $encodeFnName:ident x])
-        (fun x => LeanSerde.SerialValue.compound "Sum" #[LeanSerde.SerialValue.str "inr", $encodeFnName:ident x]))
+        (fun x => LeanSerde.SerialValue.compound "Sum.inl" #[$encodeFnName:ident x])
+        (fun x => LeanSerde.SerialValue.compound "Sum.inr" #[$encodeFnName:ident x]))
   | _ => throwError "Invalid container type"
 
 private def generateContainerDecode (fieldType : Expr) (fieldId : Ident) (index : Nat) (decodeFnName : Ident) : CommandElabM (Array (TSyntax `doElem)) := do
@@ -51,15 +51,15 @@ private def generateContainerDecode (fieldType : Expr) (fieldId : Ident) (index 
     ]
   | .app (.const `Option _) _ => pure #[
       ← `(doElem| let containerSv := args[$(quote index)]!),
-      ← `(doElem| let containerArgs ← LeanSerde.decodeCompound "Option" containerSv),
-      ← `(doElem| let $fieldId ← do
-        if containerArgs.size == 1 && containerArgs[0]! == LeanSerde.SerialValue.str "none" then
-          return .none
-        else if containerArgs.size == 2 && containerArgs[0]! == LeanSerde.SerialValue.str "some" then do
-          let val ← $decodeFnName:ident containerArgs[1]!
-          return (.some val)
-        else
-          throw "Invalid Option format")
+      ← `(doElem| let $fieldId ← match containerSv with
+        | LeanSerde.SerialValue.compound "Option.none" args =>
+          if args.size == 0 then return .none else throw "Invalid Option.none format"
+        | LeanSerde.SerialValue.compound "Option.some" args =>
+          if args.size == 1 then do
+            let val ← $decodeFnName:ident args[0]!
+            return (.some val)
+          else throw "Invalid Option.some format"
+        | _ => throw "Expected Option constructor")
     ]
   | .app (.app (.const `Prod _) _) _ => pure #[
       ← `(doElem| let containerSv := args[$(quote index)]!),
@@ -74,19 +74,18 @@ private def generateContainerDecode (fieldType : Expr) (fieldId : Ident) (index 
     ]
   | .app (.app (.const `Sum _) _) _ => pure #[
       ← `(doElem| let containerSv := args[$(quote index)]!),
-      ← `(doElem| let containerArgs ← LeanSerde.decodeCompound "Sum" containerSv),
-      ← `(doElem| let $fieldId ← do
-        if containerArgs.size == 2 then
-          if containerArgs[0]! == LeanSerde.SerialValue.str "inl" then do
-            let val ← $decodeFnName:ident containerArgs[1]!
+      ← `(doElem| let $fieldId ← match containerSv with
+        | LeanSerde.SerialValue.compound "Sum.inl" args =>
+          if args.size == 1 then do
+            let val ← $decodeFnName:ident args[0]!
             return (.inl val)
-          else if containerArgs[0]! == LeanSerde.SerialValue.str "inr" then do
-            let val ← $decodeFnName:ident containerArgs[1]!
+          else throw "Invalid Sum.inl format"
+        | LeanSerde.SerialValue.compound "Sum.inr" args =>
+          if args.size == 1 then do
+            let val ← $decodeFnName:ident args[0]!
             return (.inr val)
-          else
-            throw "Invalid Sum tag"
-        else
-          throw "Invalid Sum format")
+          else throw "Invalid Sum.inr format"
+        | _ => throw "Expected Sum constructor")
     ]
   | _ => throwError "Invalid container type"
 
@@ -177,7 +176,7 @@ private def mkConstructorData (inductVal : InductiveVal) (ctor : ConstructorVal)
   let ctorName := if isStructure then
     inductVal.name.toString
   else
-    ctor.name.toString.split (· == '.') |>.getLast!
+    ctor.name.toString
 
   return {
     encodePattern := encodePattern,
