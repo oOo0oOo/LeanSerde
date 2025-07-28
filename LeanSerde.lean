@@ -5,6 +5,7 @@ import LeanSerde.PrimitiveTypes
 import LeanSerde.ContainerTypes
 import LeanSerde.LibraryTypes
 import LeanSerde.TimeTypes
+import LeanSerde.Describe
 
 namespace LeanSerde
 

@@ -5,7 +5,7 @@ structure FileNode where
   name : String
   children : Array FileNode  -- Recursive!
   validated : Option Bool
-  deriving LeanSerde.Serializable, BEq
+  deriving LeanSerde.Serializable, BEq, Inhabited  -- Inhabited is only needed for describeFormat()
 
 def main : IO Unit := do
   -- Create a recursive file structure
@@ -47,3 +47,7 @@ def main : IO Unit := do
   let _ : ByteArray := LeanSerde.serialize (System.FilePath.mk "/tmp/test.txt")
   let _ : ByteArray := LeanSerde.serialize (Std.Time.PlainDateTime.ofDaysSinceUNIXEpoch 1000 ⟨0, 0, 0, 0⟩)
   let _ : ByteArray := LeanSerde.serialize (some (some (some 42)))
+
+  -- Describe the serialization format
+  let description := LeanSerde.describeFormat(FileNode)
+  IO.println s!"Format description: {description}"

@@ -217,6 +217,15 @@ let file3 : FileNode := { name := "file3.txt", children := #[file1, file1], vali
  [["FileNode", ["file1.txt", ["Array", []], ["Option.some", [false]]]]]}
 ```
 
+### Automatic Format Description
+
+LeanSerde provides a `describeFormat` function to get a human-readable description of the serialization format for any type. This is severely limited and does not include all details. Use with caution.
+
+```lean
+let description := LeanSerde.describeFormat(FileNode)
+-- Output: ["FileNode", [<String>, ["Array", [<?>]], ["Option.none", [<?>]]]]
+```
+
 ## Testing
 
 Clone the repository and run:

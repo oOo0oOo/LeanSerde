@@ -1,6 +1,5 @@
 import Tests.TestFramework
 import LeanSerde
-import LeanSerde.Describe
 
 open TestFramework
 
