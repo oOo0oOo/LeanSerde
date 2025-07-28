@@ -1,4 +1,5 @@
 import Lean
+import Lean.Data.Json
 import Lean.Elab.Command
 import Lean.Elab.Term
 import LeanSerde.Core
@@ -7,32 +8,31 @@ namespace LeanSerde
 
 open Lean Elab Command Term Meta
 
-private partial def analyzeSerialValue (sv : SerialValue) (seen : Std.HashSet String := {}) : String :=
+private partial def analyzeSerialValue (sv : SerialValue) (seen : Std.HashSet String := {}) : Lean.Json :=
   match sv with
-  | .str _ => "<String>"
-  | .nat _ => "<Nat>"
-  | .bool _ => "<Bool>"
-  | .ref _ => "<Ref>"
+  | .str _ => .str "<String>"
+  | .nat _ => .str "<Nat>"
+  | .bool _ => .str "<Bool>"
+  | .ref _ => .str "<Ref>"
   | .compound name children =>
-    let shortName := name
-    if seen.contains shortName then
-      s!"<{shortName}>"
+    if seen.contains name then
+      .str s!"<{name}>"
     else
-      let newSeen := seen.insert shortName
+      let newSeen := seen.insert name
       if children.isEmpty then
-        s!"[\"{shortName}\", [<?>]]"
+        .arr #[.str name, .arr #[.str "<?>"]]
       else
         let childDescs := children.map (analyzeSerialValue · newSeen)
-        let childStrs := String.intercalate ", " childDescs.toList
-        s!"[\"{shortName}\", [{childStrs}]]"
+        .arr #[.str name, .arr childDescs]
 
-def describeSerializableFormat (α : Type) [Serializable α] [Inhabited α] : String :=
+private def describeSerializableFormat (α : Type) [Serializable α] [Inhabited α] : Lean.Json :=
   let dummyValue : α := default
   let serialValue := encode dummyValue
   analyzeSerialValue serialValue
 
-elab "LeanSerde.describeFormat" "(" α:term ")" : term => do
+elab "LeanSerde.describeFormat" α:term : term => do
   let typeExpr ← elabType α
+  let exceptType ← elabType (← `(Except String Lean.Json))
   try
     let _serInst ← synthInstance (← mkAppM ``Serializable #[typeExpr])
     let inhabitedResult? ← try
@@ -43,15 +43,17 @@ elab "LeanSerde.describeFormat" "(" α:term ")" : term => do
 
     match inhabitedResult? with
     | some _ =>
-      let stx ← `(describeSerializableFormat $(← exprToSyntax typeExpr))
-      elabTerm stx none
+      let stx ← `(Except.ok (describeSerializableFormat $(← exprToSyntax typeExpr)))
+      elabTerm stx (some exceptType)
     | none =>
       let typeName := typeExpr.getAppFn.constName?.getD `unknown
-      let lastPart := typeName
-      return mkStrLit s!"<{lastPart} (Serializable but not Inhabited)>"
+      let errorMsg := s!"{typeName} is Serializable but missing Inhabited instance"
+      let stx ← `(Except.error $(quote errorMsg))
+      elabTerm stx (some exceptType)
   catch _ =>
     let typeName := typeExpr.getAppFn.constName?.getD `unknown
-    let lastPart := typeName
-    return mkStrLit s!"<{lastPart} (Not Serializable)>"
+    let errorMsg := s!"{typeName} is not Serializable"
+    let stx ← `(Except.error $(quote errorMsg))
+    elabTerm stx (some exceptType)
 
 end LeanSerde

@@ -49,5 +49,6 @@ def main : IO Unit := do
   let _ : ByteArray := LeanSerde.serialize (some (some (some 42)))
 
   -- Describe the serialization format
-  let description := LeanSerde.describeFormat(FileNode)
-  IO.println s!"Format description: {description}"
+  match LeanSerde.describeFormat FileNode with
+  | .ok json => IO.println s!"Format description: {json}"
+  | .error msg => IO.println s!"Error describing format: {msg}"

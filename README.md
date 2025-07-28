@@ -222,9 +222,13 @@ let file3 : FileNode := { name := "file3.txt", children := #[file1, file1], vali
 LeanSerde provides a `describeFormat` function to get a human-readable description of the serialization format for any type. This is severely limited and does not include all details. Use with caution.
 
 ```lean
-let description := LeanSerde.describeFormat(FileNode)
--- Output: ["FileNode", [<String>, ["Array", [<?>]], ["Option.none", [<?>]]]]
+match LeanSerde.describeFormat FileNode with
+  | .ok json => IO.println s!"Format description: {json}"
+  | .error msg => IO.println s!"Error describing format: {msg}"
+-- Format description: ["FileNode", ["<String>", ["Array", ["<?>"]], ["Option.none", ["<?>"]]]]
 ```
+
+Note that this is not a real namespace. You will have to call `LeanSerde.describeFormat` even if you `open LeanSerde`.
 
 ## Testing
 

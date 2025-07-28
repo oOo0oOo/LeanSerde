@@ -34,10 +34,15 @@ def test_describe_primitives : IO TestResult := do
     let stringResult := LeanSerde.describeFormat(String)
     let natResult := LeanSerde.describeFormat(Nat)
     let boolResult := LeanSerde.describeFormat(Bool)
-    if stringResult == "<String>" && natResult == "<Nat>" && boolResult == "<Bool>" then
-      return TestResult.success "Primitive types"
-    else
-      return TestResult.failure "Primitive types" "Unexpected format"
+    match stringResult, natResult, boolResult with
+    | .ok sJson, .ok nJson, .ok bJson =>
+      if sJson == .str "<String>" && nJson == .str "<Nat>" && bJson == .str "<Bool>" then
+        return TestResult.success "Primitive types"
+      else
+        return TestResult.failure "Primitive types" s!"Unexpected format: {sJson}, {nJson}, {bJson}"
+    | .error err, _, _ => return TestResult.failure "Primitive types" s!"String error: {err}"
+    | _, .error err, _ => return TestResult.failure "Primitive types" s!"Nat error: {err}"
+    | _, _, .error err => return TestResult.failure "Primitive types" s!"Bool error: {err}"
   catch e =>
     return TestResult.failure "Primitive types" s!"Exception: {e}"
 
@@ -45,11 +50,15 @@ def test_describe_primitives : IO TestResult := do
 def test_describe_simple_structure : IO TestResult := do
   try
     let result := LeanSerde.describeFormat(TestData)
-    let expected := "[\"TestData\", [<String>, <Nat>, <Bool>, [\"List.cons\", [<?>]]]]"
-    if result == expected then
-      return TestResult.success "Simple structure"
-    else
-      return TestResult.failure "Simple structure" s!"Expected: {expected}, got: {result}"
+    match result with
+    | .ok json =>
+      let expected := .arr #[.str "TestData", .arr #[.str "<String>", .str "<Nat>", .str "<Bool>", .arr #[.str "List.cons", .arr #[.str "<?>"]]]]
+      if json == expected then
+        return TestResult.success "Simple structure"
+      else
+        return TestResult.failure "Simple structure" s!"Expected: {expected}, got: {json}"
+    | .error err =>
+      return TestResult.failure "Simple structure" s!"Error: {err}"
   catch e =>
     return TestResult.failure "Simple structure" s!"Exception: {e}"
 
@@ -57,11 +66,15 @@ def test_describe_simple_structure : IO TestResult := do
 def test_describe_complex_structure : IO TestResult := do
   try
     let result := LeanSerde.describeFormat(ComplexData)
-    let expected := "[\"ComplexData\", [<Nat>, [\"Array\", [<?>]], [\"Option.none\", [<?>]], [\"List.cons\", [<?>]]]]"
-    if result == expected then
-      return TestResult.success "Complex structure with containers"
-    else
-      return TestResult.failure "Complex structure" s!"Expected: {expected}, got: {result}"
+    match result with
+    | .ok json =>
+      let expected := .arr #[.str "ComplexData", .arr #[.str "<Nat>", .arr #[.str "Array", .arr #[.str "<?>"]], .arr #[.str "Option.none", .arr #[.str "<?>"]], .arr #[.str "List.cons", .arr #[.str "<?>"]]]]
+      if json == expected then
+        return TestResult.success "Complex structure with containers"
+      else
+        return TestResult.failure "Complex structure" s!"Expected: {expected}, got: {json}"
+    | .error err =>
+      return TestResult.failure "Complex structure" s!"Error: {err}"
   catch e =>
     return TestResult.failure "Complex structure" s!"Exception: {e}"
 
@@ -69,11 +82,16 @@ def test_describe_complex_structure : IO TestResult := do
 def test_describe_inductive : IO TestResult := do
   try
     let result := LeanSerde.describeFormat(Status)
-    -- Should show the first constructor (pending) since we use default
-    if stringContains result "pending" then
-      return TestResult.success "Inductive type"
-    else
-      return TestResult.failure "Inductive type" s!"Expected 'pending' in result: {result}"
+    match result with
+    | .ok json =>
+      -- Check if it contains "pending" as a string value in the JSON
+      let jsonStr := json.pretty
+      if stringContains jsonStr "pending" then
+        return TestResult.success "Inductive type"
+      else
+        return TestResult.failure "Inductive type" s!"Expected 'pending' in result: {json}"
+    | .error err =>
+      return TestResult.failure "Inductive type" s!"Error: {err}"
   catch e =>
     return TestResult.failure "Inductive type" s!"Exception: {e}"
 
@@ -83,15 +101,23 @@ def test_describe_containers : IO TestResult := do
     let listResult := LeanSerde.describeFormat(List String)
     let arrayResult := LeanSerde.describeFormat(Array Nat)
     let optionResult := LeanSerde.describeFormat(Option Bool)
-    -- Updated to match actual serialization behavior
-    let listOk := listResult == "[\"List.cons\", [<?>]]"  -- This is correct
-    let arrayOk := arrayResult == "[\"Array\", [<?>]]"
-    let optionOk := optionResult == "[\"Option.none\", [<?>]]"
+    match listResult, arrayResult, optionResult with
+    | .ok listJson, .ok arrayJson, .ok optionJson =>
+      let listExpected := .arr #[.str "List.cons", .arr #[.str "<?>"]]
+      let arrayExpected := .arr #[.str "Array", .arr #[.str "<?>"]]
+      let optionExpected := .arr #[.str "Option.none", .arr #[.str "<?>"]]
 
-    if listOk && arrayOk && optionOk then
-      return TestResult.success "Container types"
-    else
-      return TestResult.failure "Container types" s!"List: {listResult}, Array: {arrayResult}, Option: {optionResult}"
+      let listOk := listJson == listExpected
+      let arrayOk := arrayJson == arrayExpected
+      let optionOk := optionJson == optionExpected
+
+      if listOk && arrayOk && optionOk then
+        return TestResult.success "Container types"
+      else
+        return TestResult.failure "Container types" s!"List: {listJson}, Array: {arrayJson}, Option: {optionJson}"
+    | .error err, _, _ => return TestResult.failure "Container types" s!"List error: {err}"
+    | _, .error err, _ => return TestResult.failure "Container types" s!"Array error: {err}"
+    | _, _, .error err => return TestResult.failure "Container types" s!"Option error: {err}"
   catch e =>
     return TestResult.failure "Container types" s!"Exception: {e}"
 
@@ -99,10 +125,15 @@ def test_describe_containers : IO TestResult := do
 def test_describe_products : IO TestResult := do
   try
     let pairResult := LeanSerde.describeFormat(String × Nat)
-    if stringContains pairResult "Prod" then
-      return TestResult.success "Product types"
-    else
-      return TestResult.failure "Product types" s!"Unexpected result: {pairResult}"
+    match pairResult with
+    | .ok json =>
+      let jsonStr := json.pretty
+      if stringContains jsonStr "Prod" then
+        return TestResult.success "Product types"
+      else
+        return TestResult.failure "Product types" s!"Unexpected result: {json}"
+    | .error err =>
+      return TestResult.failure "Product types" s!"Error: {err}"
   catch e =>
     return TestResult.failure "Product types" s!"Exception: {e}"
 
@@ -110,10 +141,18 @@ def test_describe_products : IO TestResult := do
 def test_describe_non_serializable : IO TestResult := do
   try
     let result := LeanSerde.describeFormat(Float → String)
-    if stringContains result "(Not Serializable)" then
-      return TestResult.success "Non-serializable type"
-    else
-      return TestResult.failure "Non-serializable type" s!"Expected '(Not Serializable)', got: {result}"
+    match result with
+    | .ok json =>
+      let jsonStr := json.pretty
+      if stringContains jsonStr "(Not Serializable)" then
+        return TestResult.success "Non-serializable type"
+      else
+        return TestResult.failure "Non-serializable type" s!"Expected '(Not Serializable)', got: {json}"
+    | .error err =>
+      if stringContains err "not Serializable" then
+        return TestResult.success "Non-serializable type"
+      else
+        return TestResult.failure "Non-serializable type" s!"Expected serialization error, got: {err}"
   catch e =>
     return TestResult.failure "Non-serializable type" s!"Exception: {e}"
 
