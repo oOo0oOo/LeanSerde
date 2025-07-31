@@ -66,9 +66,8 @@ private structure EncodeState where
   objects : Array SerialValue
 
 private def EncodeState.empty : EncodeState := ⟨{}, 0, #[]⟩
-
-private abbrev EncodeM := StateM EncodeState
-abbrev DecodeM := Except String
+private abbrev EncodeGraphM := StateM EncodeState
+abbrev DecodeM := ExceptT String IO
 
 class SerializableFormat (α : Type) where
   serializeValue : GraphData → α
@@ -95,9 +94,10 @@ instance : SerializableFormat String where
     let json ← Lean.Json.parse str
     deserializeFromJson json
 
+-- For now all in IO :/
 class Serializable (α : Type) where
-  encode : α → SerialValue
-  decode : SerialValue → DecodeM α
+  encode : α → IO SerialValue
+  decode : SerialValue → ExceptT String IO α
 
 export Serializable (encode decode)
 
@@ -109,7 +109,7 @@ private partial def countOccurrences (sv : SerialValue) (counts : Std.HashMap Se
     let counts := counts.insert sv (counts.getD sv 0 + 1)
     children.foldl (fun acc child => countOccurrences child acc) counts
 
-private partial def encodeWithRefs (sv : SerialValue) (shared : Std.HashMap SerialValue Nat) : EncodeM SerialValue := do
+private partial def encodeWithRefs (sv : SerialValue) (shared : Std.HashMap SerialValue Nat) : EncodeGraphM SerialValue := do
   -- Encode a SerialValue, replacing shared values with references.
   match sv with
   | .str _ | .nat _ | .bool _ | .ref _ => return sv
@@ -131,37 +131,41 @@ private partial def encodeWithRefs (sv : SerialValue) (shared : Std.HashMap Seri
       let children' ← children.mapM (encodeWithRefs · shared)
       return .compound name children'
 
-def encodeGraph {α : Type} [Serializable α] (obj : α) : GraphData :=
-  let initialSv := encode obj
+def encodeGraph {α : Type} [Serializable α] (obj : α) : IO GraphData := do
+  let initialSv ← encode obj
   let counts := countOccurrences initialSv {}
   let sharedValues := counts.filter (fun _ count => count > 1)
   let (root, state) := (encodeWithRefs initialSv sharedValues).run EncodeState.empty
-  ⟨root, state.objects⟩
+  return ⟨root, state.objects⟩
 
 partial def decodeGraph {α : Type} [Serializable α] (gd : GraphData) : DecodeM α := do
   -- First, resolve all refs in the entire structure to get a ref-free tree
   -- Then decode the root value
-  let rec resolveRefs (sv : SerialValue) : DecodeM SerialValue :=
+  let rec resolveRefs (sv : SerialValue) : IO (Except String SerialValue) :=
     match sv with
     | .ref id =>
       if h : id < gd.objects.size then
         resolveRefs gd.objects[id]
       else
-        .error s!"Reference {id} out of bounds"
-    | .compound name children =>
-      match children.mapM resolveRefs with
-      | .ok children' => .ok (.compound name children')
-      | .error e => .error e
-    | other => .ok other
-  let resolvedRoot ← resolveRefs gd.root
+        return .error s!"Reference {id} out of bounds"
+    | .compound name children => do
+      let mut resolved : Array SerialValue := #[]
+      for child in children do
+        match ← resolveRefs child with
+        | .ok childResolved => resolved := resolved.push childResolved
+        | .error e => return .error e
+      return .ok (.compound name resolved)
+    | other => return .ok other
 
+  let resolvedRoot ← resolveRefs gd.root
   decode resolvedRoot
 
-def decodeCompound (expectedName : String) (sv : SerialValue) : DecodeM (Array SerialValue) :=
+def decodeCompound (expectedName : String) (sv : SerialValue) : DecodeM (Array SerialValue) := do
   match sv with
   | .compound name args =>
-    if name == expectedName then .ok args
-    else .error s!"Expected {expectedName}, got {name}"
-  | other => .error s!"Expected compound {expectedName}, got {repr other}"
+    if name == expectedName then return args
+    else throw s!"Expected {expectedName}, got {name}"
+  | other => throw s!"Expected compound {expectedName}, got {repr other}"
+
 
 end LeanSerde

@@ -1,7 +1,11 @@
+import Lean
+
 import Tests.TestFramework
 import LeanSerde
 
 open TestFramework
+
+open Lean Elab Meta Term Command
 
 namespace StructureTests
 
@@ -330,7 +334,7 @@ def test_no_refs_format : IO TestResult := do
   let uniqueNode2 := SimpleNode.mk 200 "second"
   let container := NodeContainer.mk #[uniqueNode1, uniqueNode2]
 
-  let serialized : String := LeanSerde.serialize container
+  let serialized : String ← LeanSerde.serialize container
 
   -- Should be simple array format, not graph format with "root" and "objects"
   if stringContains serialized "\"root\"" || stringContains serialized "\"objects\"" then
@@ -347,7 +351,7 @@ def test_refs_format : IO TestResult := do
   let sharedNode := SimpleNode.mk 42 "shared"
   let container := NodeContainer.mk #[sharedNode, sharedNode, sharedNode, sharedNode]
 
-  let serialized : String := LeanSerde.serialize container
+  let serialized : String ← LeanSerde.serialize container
 
   -- Should be graph format with "root" and "objects"
   if !stringContains serialized "\"root\"" || !stringContains serialized "\"objects\"" then
@@ -373,3 +377,70 @@ def run : IO Bool := do
   ]
 
 end RefsTests
+
+namespace MonadLiftingTests
+
+-- Simple test data
+structure SimpleData where
+  value : Nat
+  text : String
+  deriving LeanSerde.Serializable, BEq
+
+-- Test serialization in ReaderT with some context
+def test_reader_monad_serialization : ReaderT String IO TestResult := do
+  let testData := SimpleData.mk 456 "reader test"
+  let context ← read
+
+  let serialized : String ← LeanSerde.serialize testData
+  let deserialized : Except String SimpleData ← LeanSerde.deserialize serialized
+
+  match deserialized with
+  | .error e => return TestResult.failure "ReaderT Serialization" s!"Failed to deserialize in context '{context}': {e}"
+  | .ok value =>
+    if value == testData then
+      return TestResult.success "ReaderT Serialization"
+    else
+      return TestResult.failure "ReaderT Serialization" "Value mismatch"
+
+-- Test serialization in a complex monad stack (StateT + ExceptT + IO)
+def test_complex_monad_stack : StateT Nat (ExceptT String IO) TestResult := do
+  let testData := SimpleData.mk 789 "complex stack test"
+
+  -- Increment state counter
+  modify (· + 1)
+  let currentState ← get
+
+  let serialized : String ← LeanSerde.serialize testData
+  let deserialized : Except String SimpleData ← LeanSerde.deserialize serialized
+
+  match deserialized with
+  | .error e => throw s!"Failed to deserialize at state {currentState}: {e}"
+  | .ok value =>
+    if value == testData then
+      return TestResult.success "Complex Monad Stack"
+    else
+      throw "Value mismatch in complex monad stack"
+
+def runReaderTest (test : ReaderT String IO TestResult) : IO TestResult := do
+  try
+    let result ← test.run "test-context"
+    return result
+  catch e =>
+    return TestResult.failure "ReaderT Wrapper" s!"Exception in ReaderT: {e}"
+
+def runComplexStackTest : IO TestResult := do
+  try
+    let result ← ExceptT.run (StateT.run test_complex_monad_stack 0)
+    match result with
+    | .error e => return TestResult.failure "Complex Stack" e
+    | .ok (testResult, _finalState) => return testResult
+  catch e =>
+    return TestResult.failure "Complex Stack Wrapper" s!"Exception in complex stack: {e}"
+
+def run : IO Bool := do
+  runTests "Monad Lifting" [
+    runReaderTest test_reader_monad_serialization,
+    runComplexStackTest
+  ]
+
+end MonadLiftingTests

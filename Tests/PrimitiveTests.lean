@@ -8,8 +8,8 @@ namespace PrimitiveTests
 -- More complex tests
 def test_thunk : IO TestResult := do
   let thunk : Unit → Nat := fun _ => 42
-  let bytes: ByteArray := LeanSerde.serialize thunk
-  match (LeanSerde.deserialize bytes : Except String (Unit → Nat)) with
+  let bytes: ByteArray ← LeanSerde.serialize thunk
+  match (← LeanSerde.deserialize bytes : Except String (Unit → Nat)) with
   | .error e => return TestResult.failure "Thunk" s!"Failed to deserialize: {e}"
   | .ok deserialized =>
     if deserialized () == thunk () then

@@ -36,7 +36,8 @@ def main : IO Unit := do
     runTestSuite "Library Types" LibraryTests.run,
     runTestSuite "Meta Types" MetaTests.run,
     runTestSuite "Refs Format" RefsTests.run,
-    runTestSuite "Describe Functionality" DescribeTests.run
+    runTestSuite "Describe Functionality" DescribeTests.run,
+    runTestSuite "Monad Lifting" MonadLiftingTests.run
   ].mapM id
 
   let totalTests := results.length

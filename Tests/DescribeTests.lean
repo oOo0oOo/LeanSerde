@@ -31,9 +31,9 @@ private def stringContains (haystack : String) (needle : String) : Bool :=
 -- Test basic types
 def test_describe_primitives : IO TestResult := do
   try
-    let stringResult := LeanSerde.describeFormat String
-    let natResult := LeanSerde.describeFormat Nat
-    let boolResult := LeanSerde.describeFormat Bool
+    let stringResult ← LeanSerde.describeFormat String
+    let natResult ← LeanSerde.describeFormat Nat
+    let boolResult ← LeanSerde.describeFormat Bool
     match stringResult, natResult, boolResult with
     | .ok sJson, .ok nJson, .ok bJson =>
       if sJson == .str "<String>" && nJson == .str "<Nat>" && bJson == .str "<Bool>" then
@@ -49,7 +49,7 @@ def test_describe_primitives : IO TestResult := do
 -- Test simple structure
 def test_describe_simple_structure : IO TestResult := do
   try
-    let result := LeanSerde.describeFormat TestData
+    let result ← LeanSerde.describeFormat TestData
     match result with
     | .ok json =>
       let expected := .arr #[.str "TestData", .arr #[.str "<String>", .str "<Nat>", .str "<Bool>", .arr #[.str "List.cons", .arr #[.str "<?>"]]]]
@@ -65,7 +65,7 @@ def test_describe_simple_structure : IO TestResult := do
 -- Test complex structure with containers
 def test_describe_complex_structure : IO TestResult := do
   try
-    let result := LeanSerde.describeFormat ComplexData
+    let result ← LeanSerde.describeFormat ComplexData
     match result with
     | .ok json =>
       let expected := .arr #[.str "ComplexData", .arr #[.str "<Nat>", .arr #[.str "Array", .arr #[.str "<?>"]], .arr #[.str "Option.none", .arr #[.str "<?>"]], .arr #[.str "List.cons", .arr #[.str "<?>"]]]]
@@ -81,7 +81,7 @@ def test_describe_complex_structure : IO TestResult := do
 -- Test inductive type
 def test_describe_inductive : IO TestResult := do
   try
-    let result := LeanSerde.describeFormat Status
+    let result ← LeanSerde.describeFormat Status
     match result with
     | .ok json =>
       -- Check if it contains "pending" as a string value in the JSON
@@ -98,9 +98,9 @@ def test_describe_inductive : IO TestResult := do
 -- Test container types
 def test_describe_containers : IO TestResult := do
   try
-    let listResult := LeanSerde.describeFormat List String
-    let arrayResult := LeanSerde.describeFormat Array Nat
-    let optionResult := LeanSerde.describeFormat Option Bool
+    let listResult ← LeanSerde.describeFormat (List String)
+    let arrayResult ← LeanSerde.describeFormat (Array Nat)
+    let optionResult ← LeanSerde.describeFormat (Option Bool)
     match listResult, arrayResult, optionResult with
     | .ok listJson, .ok arrayJson, .ok optionJson =>
       let listExpected := .arr #[.str "List.cons", .arr #[.str "<?>"]]
@@ -124,7 +124,7 @@ def test_describe_containers : IO TestResult := do
 -- Test product types
 def test_describe_products : IO TestResult := do
   try
-    let pairResult := LeanSerde.describeFormat String × Nat
+    let pairResult ← LeanSerde.describeFormat (String × Nat)
     match pairResult with
     | .ok json =>
       let jsonStr := json.pretty
@@ -140,7 +140,7 @@ def test_describe_products : IO TestResult := do
 -- Test non-serializable type
 def test_describe_non_serializable : IO TestResult := do
   try
-    let result := LeanSerde.describeFormat Float → String
+    let result ← LeanSerde.describeFormat (Float → String)
     match result with
     | .ok json =>
       let jsonStr := json.pretty
