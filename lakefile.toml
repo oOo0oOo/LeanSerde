@@ -12,6 +12,7 @@ name = "Tests"
 [[lean_exe]]
 name = "leanserde"
 root = "Main"
+supportInterpreter = true
 
 [[lean_exe]]
 name = "tests"

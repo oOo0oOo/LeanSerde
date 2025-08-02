@@ -153,6 +153,32 @@ Use `import LeanSerde.MetaTypes` to access meta types:
 - `partial`: While type-safe, some field values or children are not serialized/deserialized.
 - `placeholder`: Only type info or dummy value is encoded, not real data.
 
+### LeanSnapshot
+
+Serializable snapshots of Lean elaboration state for proof checkpointing, interactive theorem proving, and distributed search.
+
+```lean
+import LeanSerde.SnapshotTypes
+
+-- Create using .create [List String], .empty or .fromEnv Environment
+let s ← LeanSerde.LeanSnapshot.create ["Init"]
+
+let s' ← s.command "theorem test : 1 + 1 = 2 := by sorry"
+let s'' ← s'.tactic "rfl"
+
+let goals ← s'.goals  -- ["⊢ 1 + 1 = 2"]
+let complete := s''.complete?  -- true
+```
+
+Note: Environment and LeanSnapshot require `supportInterpreter = true` in `lakefile.toml`:
+
+```toml
+[[lean_exe]]
+name = "main"
+root = "Main"
+supportInterpreter = true
+```
+
 ## Custom Types without deriving
 
 If deriving fails, you can manually implement `Serializable` for your types:

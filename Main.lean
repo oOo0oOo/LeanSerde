@@ -1,4 +1,5 @@
 import LeanSerde
+import LeanSerde.SnapshotTypes
 
 -- Custom types by deriving `LeanSerde.Serializable`
 structure FileNode where
@@ -52,3 +53,18 @@ def main : IO Unit := do
   match ← LeanSerde.describeFormat FileNode with
   | .ok json => IO.println s!"Format description: {json}"
   | .error msg => IO.println s!"Error describing format: {msg}"
+
+  -- Serializable snapshots of Lean elaboration state
+  let s ← LeanSerde.LeanSnapshot.create ["Init"]
+
+  let s' ← s.command "theorem test : 1 + 1 = 2 := by sorry"
+  IO.println s!"Goals: {← s'.goals}"
+
+  let s'' ← s'.tactic "rfl"
+
+  let serialized: ByteArray := ← LeanSerde.serialize s''
+  let s''' ← LeanSerde.deserialize serialized
+  match s''' with
+  | .ok (s''': LeanSerde.LeanSnapshot) =>
+    IO.println s!"Complete: {s'''.complete?}"
+  | .error msg => IO.println s!"Deserialization failed: {msg}"
