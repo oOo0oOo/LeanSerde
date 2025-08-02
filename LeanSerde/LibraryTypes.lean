@@ -12,10 +12,14 @@ import LeanSerde.ContainerTypes
 import LeanSerde.Derive
 
 namespace LeanSerde
-
 -- HashMap
 instance [Serializable k] [Serializable v] [BEq k] [Hashable k] : Serializable (Std.HashMap k v) where
-  encode m := .compound "HashMap" ((m.toList.map (fun ⟨k, v⟩ => .compound "Entry" #[encode k, encode v])).toArray)
+  encode m := do
+    let entries ← m.toList.mapM (fun ⟨k, v⟩ => do
+      let encodedK ← encode k
+      let encodedV ← encode v
+      return .compound "Entry" #[encodedK, encodedV])
+    return .compound "HashMap" entries.toArray
   decode sv := do
     let args ← decodeCompound "HashMap" sv
     let entries ← args.mapM (fun entry => match entry with
@@ -23,38 +27,45 @@ instance [Serializable k] [Serializable v] [BEq k] [Hashable k] : Serializable (
         do
           let key ← decode k
           let value ← decode v
-          .ok (key, value)
-      | _ => .error s!"Expected Entry compound, got {repr entry}")
-    .ok (Std.HashMap.ofList entries.toList)
+          return (key, value)
+      | _ => throw s!"Expected Entry compound, got {repr entry}")
+    return (Std.HashMap.ofList entries.toList)
 
 -- HashSet
 instance [Serializable k] [BEq k] [Hashable k] : Serializable (Std.HashSet k) where
-  encode s := .compound "HashSet" (s.toList.map encode |>.toArray)
+  encode s := do
+    let encodedElems ← s.toList.mapM encode
+    return .compound "HashSet" encodedElems.toArray
   decode sv := do
     let args ← decodeCompound "HashSet" sv
-    let elems ← args.mapM decode |>.mapError (·)
-    .ok (Std.HashSet.ofList elems.toList)
+    let elems ← args.mapM decode
+    return (Std.HashSet.ofList elems.toList)
 
 -- Lean.Json
 instance : Serializable Lean.Json where
-  encode (json : Lean.Json) := .compound "Json" #[encode (json.compress)]
+  encode (json : Lean.Json) := do
+    let encodedStr ← encode (json.compress)
+    return .compound "Json" #[encodedStr]
   decode sv := do
     match sv with
     | .compound "Json" #[jsonStr] =>
       let jsonStr ← decode jsonStr
       match Lean.Json.parse jsonStr with
-      | .ok json => .ok json
-      | .error err => .error s!"Failed to parse JSON: {err}"
+      | .ok json => return json
+      | .error err => throw s!"Failed to parse JSON: {err}"
     | .compound "Json" args =>
-      .error s!"Json expects 1 arg, got {args.size}"
+      throw s!"Json expects 1 arg, got {args.size}"
     | other =>
-      .error s!"Expected Json compound, got {repr other}"
-
-deriving instance LeanSerde.Serializable for Lean.Position
+      throw s!"Expected Json compound, got {repr other}"
 
 -- Lean.RBMap
 instance {k v : Type} [Serializable k] [Serializable v] {cmp : k → k → Ordering} : Serializable (Lean.RBMap k v cmp) where
-  encode m := .compound "RBMap" (m.toList.map (fun ⟨k, v⟩ => .compound "Entry" #[encode k, encode v]) |>.toArray)
+  encode m := do
+    let entries ← m.toList.mapM (fun ⟨k, v⟩ => do
+      let encodedK ← encode k
+      let encodedV ← encode v
+      return .compound "Entry" #[encodedK, encodedV])
+    return .compound "RBMap" entries.toArray
   decode sv := do
     let args ← decodeCompound "RBMap" sv
     let entries ← args.mapM (fun entry => match entry with
@@ -62,13 +73,18 @@ instance {k v : Type} [Serializable k] [Serializable v] {cmp : k → k → Order
         do
           let key ← decode k
           let value ← decode v
-          .ok (key, value)
-      | _ => .error s!"Expected Entry compound, got {repr entry}")
-    .ok (Lean.RBMap.ofList entries.toList)
+          return (key, value)
+      | _ => throw s!"Expected Entry compound, got {repr entry}")
+    return (Lean.RBMap.ofList entries.toList)
 
 -- Lean.PersistentHashMap
 instance {k v : Type} [Serializable k] [Serializable v] [BEq k] [Hashable k] : Serializable (Lean.PersistentHashMap k v) where
-  encode m := .compound "PersistentHashMap" ((m.toList.map (fun ⟨k, v⟩ => .compound "Entry" #[encode k, encode v])).toArray)
+  encode m := do
+    let entries ← m.toList.mapM (fun ⟨k, v⟩ => do
+      let encodedK ← encode k
+      let encodedV ← encode v
+      return .compound "Entry" #[encodedK, encodedV])
+    return .compound "PersistentHashMap" entries.toArray
   decode sv := do
     let args ← decodeCompound "PersistentHashMap" sv
     let entries ← args.mapM (fun entry => match entry with
@@ -76,42 +92,45 @@ instance {k v : Type} [Serializable k] [Serializable v] [BEq k] [Hashable k] : S
         do
           let key ← decode k
           let value ← decode v
-          .ok (key, value)
-      | _ => .error s!"Expected Entry compound, got {repr entry}")
-    .ok (entries.toList.foldl (fun acc ⟨k, v⟩ => acc.insert k v) Lean.PersistentHashMap.empty)
+          return (key, value)
+      | _ => throw s!"Expected Entry compound, got {repr entry}")
+    return (entries.toList.foldl (fun acc ⟨k, v⟩ => acc.insert k v) Lean.PersistentHashMap.empty)
 
 -- Lean.PersistentArray
 instance [Serializable α] : Serializable (Lean.PersistentArray α) where
-  encode arr := .compound "PersistentArray" (arr.toList.map encode |>.toArray)
+  encode arr := do
+    let encodedElems ← arr.toList.mapM encode
+    return .compound "PersistentArray" encodedElems.toArray
   decode sv := do
     let args ← decodeCompound "PersistentArray" sv
-    let elems ← args.mapM decode |>.mapError (·)
+    let elems ← args.mapM decode
     if elems.isEmpty then
-      .ok Lean.PersistentArray.empty
+      return Lean.PersistentArray.empty
     else
-      .ok (elems.foldl (init := Lean.PersistentArray.empty) (fun acc elem => acc.push elem))
+      return (elems.foldl (init := Lean.PersistentArray.empty) (fun acc elem => acc.push elem))
 
 -- Position and FileMap basics
 instance : Serializable Lean.Position where
-  encode pos := .compound "Position" #[.nat pos.line, .nat pos.column]
+  encode pos := return .compound "Position" #[.nat pos.line, .nat pos.column]
   decode sv := do
     match sv with
     | .compound "Position" #[.nat line, .nat col] =>
-      .ok ⟨line, col⟩
+      return ⟨line, col⟩
     | .compound "Position" args =>
-      .error s!"Position expects 2 args, got {args.size}"
+      throw s!"Position expects 2 args, got {args.size}"
     | other =>
-      .error s!"Expected Position compound, got {repr other}"
-
--- Basic Format support
-deriving instance LeanSerde.Serializable for Std.Format.FlattenBehavior
+      throw s!"Expected Position compound, got {repr other}"
 
 -- RBTree
 instance {k : Type} [Serializable k] {cmp : k → k → Ordering} : Serializable (Lean.RBTree k cmp) where
-  encode t := .compound "RBTree" (t.toList.map encode |>.toArray)
+  encode t := do
+    let encodedElems ← t.toList.mapM encode
+    return .compound "RBTree" encodedElems.toArray
   decode sv := do
     let args ← decodeCompound "RBTree" sv
-    let elems ← args.mapM decode |>.mapError (·)
-    .ok (elems.toList.foldl (init := Lean.RBTree.empty) (fun acc elem => acc.insert elem))
+    let elems ← args.mapM decode
+    return (elems.toList.foldl (init := Lean.RBTree.empty) (fun acc elem => acc.insert elem))
+
+deriving instance LeanSerde.Serializable for Lean.Position, Std.Format.FlattenBehavior
 
 end LeanSerde

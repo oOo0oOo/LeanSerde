@@ -21,19 +21,32 @@ private def mkAuxFunctionName (name: String) (typeName : Name) : Ident :=
 private def generateContainerEncode (fieldType : Expr) (fieldTerm : TSyntax `term) (encodeFnName : Ident) : CommandElabM (TSyntax `term) := do
   match fieldType with
   | .app (.const `List _) _ =>
-    `(LeanSerde.SerialValue.compound "List.cons" (($fieldTerm).map $encodeFnName:ident |>.toArray))
+    `(do
+      let encodedElems ← ($fieldTerm).mapM $encodeFnName:ident
+      return LeanSerde.SerialValue.compound "List.cons" encodedElems.toArray)
   | .app (.const `Array _) _ =>
-    `(LeanSerde.SerialValue.compound "Array" (($fieldTerm).map $encodeFnName:ident))
+    `(do
+      let encodedElems ← ($fieldTerm).mapM $encodeFnName:ident
+      return LeanSerde.SerialValue.compound "Array" encodedElems)
   | .app (.const `Option _) _ =>
     `(Option.casesOn $fieldTerm
-        (LeanSerde.SerialValue.compound "Option.none" #[])
-        (fun x => LeanSerde.SerialValue.compound "Option.some" #[$encodeFnName:ident x]))
+        (return LeanSerde.SerialValue.compound "Option.none" #[])
+        (fun x => do
+          let encodedX ← $encodeFnName:ident x
+          return LeanSerde.SerialValue.compound "Option.some" #[encodedX]))
   | .app (.app (.const `Prod _) _) _ =>
-    `(LeanSerde.SerialValue.compound "Prod" #[$encodeFnName:ident ($fieldTerm).1, $encodeFnName:ident ($fieldTerm).2])
+    `(do
+      let encoded1 ← $encodeFnName:ident ($fieldTerm).1
+      let encoded2 ← $encodeFnName:ident ($fieldTerm).2
+      return LeanSerde.SerialValue.compound "Prod" #[encoded1, encoded2])
   | .app (.app (.const `Sum _) _) _ =>
     `(Sum.casesOn $fieldTerm
-        (fun x => LeanSerde.SerialValue.compound "Sum.inl" #[$encodeFnName:ident x])
-        (fun x => LeanSerde.SerialValue.compound "Sum.inr" #[$encodeFnName:ident x]))
+        (fun x => do
+          let encodedX ← $encodeFnName:ident x
+          return LeanSerde.SerialValue.compound "Sum.inl" #[encodedX])
+        (fun x => do
+          let encodedX ← $encodeFnName:ident x
+          return LeanSerde.SerialValue.compound "Sum.inr" #[encodedX]))
   | _ => throwError "Invalid container type"
 
 private def generateContainerDecode (fieldType : Expr) (fieldId : Ident) (index : Nat) (decodeFnName : Ident) : CommandElabM (Array (TSyntax `doElem)) := do
@@ -53,13 +66,13 @@ private def generateContainerDecode (fieldType : Expr) (fieldId : Ident) (index 
       ← `(doElem| let containerSv := args[$(quote index)]!),
       ← `(doElem| let $fieldId ← (match containerSv with
         | LeanSerde.SerialValue.compound "Option.none" args =>
-          if args.size == 0 then .ok .none else .error "Invalid Option.none format"
+          if args.size == 0 then return .none else throw "Invalid Option.none format"
         | LeanSerde.SerialValue.compound "Option.some" args =>
           if args.size == 1 then do
             let val ← $decodeFnName:ident args[0]!
-            .ok (.some val)
-          else .error "Invalid Option.some format"
-        | _ => .error "Expected Option constructor"))
+            return (.some val)
+          else throw "Invalid Option.some format"
+        | _ => throw "Expected Option constructor"))
     ]
   | .app (.app (.const `Prod _) _) _ => pure #[
       ← `(doElem| let containerSv := args[$(quote index)]!),
@@ -67,9 +80,9 @@ private def generateContainerDecode (fieldType : Expr) (fieldId : Ident) (index 
       ← `(doElem| let $fieldId ← (if containerArgs.size == 2 then do
           let fst ← $decodeFnName:ident containerArgs[0]!
           let snd ← $decodeFnName:ident containerArgs[1]!
-          .ok (fst, snd)
+          return (fst, snd)
         else
-          .error "Invalid Prod format"))
+          throw "Invalid Prod format"))
     ]
   | .app (.app (.const `Sum _) _) _ => pure #[
       ← `(doElem| let containerSv := args[$(quote index)]!),
@@ -77,14 +90,14 @@ private def generateContainerDecode (fieldType : Expr) (fieldId : Ident) (index 
         | LeanSerde.SerialValue.compound "Sum.inl" args =>
           if args.size == 1 then do
             let val ← $decodeFnName:ident args[0]!
-            .ok (.inl val)
-          else .error "Invalid Sum.inl format"
+            return (.inl val)
+          else throw "Invalid Sum.inl format"
         | LeanSerde.SerialValue.compound "Sum.inr" args =>
           if args.size == 1 then do
             let val ← $decodeFnName:ident args[0]!
-            .ok (.inr val)
-          else .error "Invalid Sum.inr format"
-        | _ => .error "Expected Sum constructor"))
+            return (.inr val)
+          else throw "Invalid Sum.inr format"
+        | _ => throw "Expected Sum constructor"))
     ]
   | _ => throwError "Invalid container type"
 
@@ -190,7 +203,12 @@ private def mkSerializableQuotation (typeId : TSyntax `ident) (constructorData :
     (cd.encodePattern, cd.encodeElems, cd.name)
 
   let encodeArms ← encodeMatches.mapM fun (_, elems, name) =>
-    `(LeanSerde.SerialValue.compound $(quote name) #[$elems,*])
+    if elems.isEmpty then
+      `(return LeanSerde.SerialValue.compound $(quote name) #[])
+    else
+      `(do
+        let encodedElems ← #[$elems,*].mapM id
+        return LeanSerde.SerialValue.compound $(quote name) encodedElems)
 
   let decodeArms ← constructorData.mapIdxM fun i data => do
     let numFields := constructorInfos[i]!.numFields
@@ -218,20 +236,20 @@ private def mkSerializableQuotation (typeId : TSyntax `ident) (constructorData :
 
   let encodeDef ← if isRecursive then
     if typeParams.isEmpty then
-      `(private partial def $encodeFnName (v : $typeId) : LeanSerde.SerialValue :=
+      `(private partial def $encodeFnName (v : $typeId) : IO LeanSerde.SerialValue :=
           match v with
           $[| $encodePatterns => $encodeArms]*)
     else
-      `(private partial def $encodeFnName $instConstraints:bracketedBinder* (v : $polyTypeApp) : LeanSerde.SerialValue :=
+      `(private partial def $encodeFnName $instConstraints:bracketedBinder* (v : $polyTypeApp) : IO LeanSerde.SerialValue :=
           match v with
           $[| $encodePatterns => $encodeArms]*)
   else
     if typeParams.isEmpty then
-      `(private def $encodeFnName (v : $typeId) : LeanSerde.SerialValue :=
+      `(private def $encodeFnName (v : $typeId) : IO LeanSerde.SerialValue :=
           match v with
           $[| $encodePatterns => $encodeArms]*)
     else
-      `(private def $encodeFnName $instConstraints:bracketedBinder* (v : $polyTypeApp) : LeanSerde.SerialValue :=
+      `(private def $encodeFnName $instConstraints:bracketedBinder* (v : $polyTypeApp) : IO LeanSerde.SerialValue :=
           match v with
           $[| $encodePatterns => $encodeArms]*)
 
@@ -244,23 +262,23 @@ private def mkSerializableQuotation (typeId : TSyntax `ident) (constructorData :
 
   let decodeDef ← if isRecursive then
     if typeParams.isEmpty then
-      `(private partial def $decodeFnName (sv : LeanSerde.SerialValue) : Except String $typeId :=
+      `(private partial def $decodeFnName (sv : LeanSerde.SerialValue) : LeanSerde.DecodeM $typeId :=
           match sv with
           | .compound ctor args => $decodeMatcher
           | _ => .error "Expected compound value")
     else
-      `(private partial def $decodeFnName $instConstraints:bracketedBinder* (sv : LeanSerde.SerialValue) : Except String $polyTypeApp :=
+      `(private partial def $decodeFnName $instConstraints:bracketedBinder* (sv : LeanSerde.SerialValue) : LeanSerde.DecodeM $polyTypeApp :=
           match sv with
           | .compound ctor args => $decodeMatcher
           | _ => .error "Expected compound value")
   else
     if typeParams.isEmpty then
-      `(private def $decodeFnName (sv : LeanSerde.SerialValue) : Except String $typeId :=
+      `(private def $decodeFnName (sv : LeanSerde.SerialValue) : LeanSerde.DecodeM $typeId :=
           match sv with
           | .compound ctor args => $decodeMatcher
           | _ => .error "Expected compound value")
     else
-      `(private def $decodeFnName $instConstraints:bracketedBinder* (sv : LeanSerde.SerialValue) : Except String $polyTypeApp :=
+      `(private def $decodeFnName $instConstraints:bracketedBinder* (sv : LeanSerde.SerialValue) : LeanSerde.DecodeM $polyTypeApp :=
           match sv with
           | .compound ctor args => $decodeMatcher
           | _ => .error "Expected compound value")

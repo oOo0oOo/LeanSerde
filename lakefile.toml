@@ -12,7 +12,9 @@ name = "Tests"
 [[lean_exe]]
 name = "leanserde"
 root = "Main"
+supportInterpreter = true
 
 [[lean_exe]]
 name = "tests"
 root = "Tests.TestRunner"
+supportInterpreter = true

@@ -1,4 +1,5 @@
 import LeanSerde
+import LeanSerde.SnapshotTypes
 
 -- Custom types by deriving `LeanSerde.Serializable`
 structure FileNode where
@@ -14,11 +15,11 @@ def main : IO Unit := do
   let file3 : FileNode := { name := "file3.txt", children := #[file1, file1], validated := some true }
 
   -- Serialize to different formats
-  let bytes : ByteArray := LeanSerde.serialize file1 -- Binary format (CBOR)
-  let _json : Lean.Json := LeanSerde.serialize file2
-  let _string : String := LeanSerde.serialize file3
+  let bytes : ByteArray := ← LeanSerde.serialize file1 -- Binary format (CBOR)
+  let _json : Lean.Json := ← LeanSerde.serialize file2
+  let _string : String := ← LeanSerde.serialize file3
 
-  match LeanSerde.deserialize bytes with
+  match (← LeanSerde.deserialize bytes) with
   | .ok (node: FileNode) =>
     if node == file1 then
       IO.println "Roundtrip successful!"
@@ -37,18 +38,33 @@ def main : IO Unit := do
   | .error msg => IO.println s!"Error loading file: {msg}"
 
   -- Supports variety of types
-  let _ : ByteArray := LeanSerde.serialize [3, 1, 4]
-  let _ : ByteArray := LeanSerde.serialize #[1.1, 2.2, 3.2]
-  let _ : ByteArray := LeanSerde.serialize (Sum.inl 42 : Sum Nat String)
-  let _ : ByteArray := LeanSerde.serialize (.ok "success" : Except String String)
-  let _ : ByteArray := LeanSerde.serialize (("key", 123), ("value", 456))
-  let _ : ByteArray := LeanSerde.serialize [true, false, true]
-  let _ : ByteArray := LeanSerde.serialize [[1, 2], [3, 4], []]
-  let _ : ByteArray := LeanSerde.serialize (System.FilePath.mk "/tmp/test.txt")
-  let _ : ByteArray := LeanSerde.serialize (Std.Time.PlainDateTime.ofDaysSinceUNIXEpoch 1000 ⟨0, 0, 0, 0⟩)
-  let _ : ByteArray := LeanSerde.serialize (some (some (some 42)))
+  let _ : ByteArray := ← LeanSerde.serialize [3, 1, 4]
+  let _ : ByteArray := ← LeanSerde.serialize #[1.1, 2.2, 3.2]
+  let _ : ByteArray := ← LeanSerde.serialize (Sum.inl 42 : Sum Nat String)
+  let _ : ByteArray := ← LeanSerde.serialize (.ok "success" : Except String String)
+  let _ : ByteArray := ← LeanSerde.serialize (("key", 123), ("value", 456))
+  let _ : ByteArray := ← LeanSerde.serialize [true, false, true]
+  let _ : ByteArray := ← LeanSerde.serialize [[1, 2], [3, 4], []]
+  let _ : ByteArray := ← LeanSerde.serialize (System.FilePath.mk "/tmp/test.txt")
+  let _ : ByteArray := ← LeanSerde.serialize (Std.Time.PlainDateTime.ofDaysSinceUNIXEpoch 1000 ⟨0, 0, 0, 0⟩)
+  let _ : ByteArray := ← LeanSerde.serialize (some (some (some (42 : Nat))))
 
   -- Describe the serialization format
-  match LeanSerde.describeFormat FileNode with
+  match ← LeanSerde.describeFormat FileNode with
   | .ok json => IO.println s!"Format description: {json}"
   | .error msg => IO.println s!"Error describing format: {msg}"
+
+  -- Serializable snapshots of Lean elaboration state
+  let s ← LeanSerde.LeanSnapshot.create ["Init"]
+
+  let s' ← s.command "theorem test : 1 + 1 = 2 := by sorry"
+  IO.println s!"Goals: {← s'.goals}"
+
+  let s'' ← s'.tactic "rfl"
+
+  let serialized: ByteArray := ← LeanSerde.serialize s''
+  let s''' ← LeanSerde.deserialize serialized
+  match s''' with
+  | .ok (s''': LeanSerde.LeanSnapshot) =>
+    IO.println s!"Complete: {s'''.complete?}"
+  | .error msg => IO.println s!"Deserialization failed: {msg}"

@@ -19,8 +19,9 @@ def TestResult.failure (name : String) (error : String) : TestResult :=
 def test_roundtrip {α} [Serializable α] [BEq α] (testName: String) (value : α) : IO TestResult := do
   try
     -- Test ByteArray format
-    let bytes: ByteArray := serialize value
-    match deserialize bytes with
+    let bytes: ByteArray ← serialize value
+    let deserializedValueResult : Except String α ← deserialize bytes
+    match deserializedValueResult with
     | .error e =>
       return TestResult.failure testName s!"Failed to deserialize ByteArray: {e}"
     | .ok deserializedValue =>
@@ -28,8 +29,9 @@ def test_roundtrip {α} [Serializable α] [BEq α] (testName: String) (value : �
         return TestResult.failure testName "Value mismatch after ByteArray roundtrip"
 
     -- Test JSON format
-    let json: Lean.Json := serialize value
-    match deserialize json with
+    let json: Lean.Json ← serialize value
+    let jsonDeserializedResult : Except String α ← deserialize json
+    match jsonDeserializedResult with
     | .error e =>
       return TestResult.failure testName s!"Failed to deserialize JSON: {e}"
     | .ok deserializedValue =>
@@ -37,8 +39,9 @@ def test_roundtrip {α} [Serializable α] [BEq α] (testName: String) (value : �
         return TestResult.failure testName "Value mismatch after JSON roundtrip"
 
     -- Test String format
-    let str: String := serialize value
-    match deserialize str with
+    let str: String ← serialize value
+    let strDeserializedResult : Except String α ← deserialize str
+    match strDeserializedResult with
     | .error e =>
       return TestResult.failure testName s!"Failed to deserialize String: {e}"
     | .ok deserializedValue =>
@@ -72,7 +75,6 @@ def test_roundtrip {α} [Serializable α] [BEq α] (testName: String) (value : �
     return TestResult.success testName
   catch e =>
     return TestResult.failure testName s!"Exception: {e}"
-
 
 def runTests (suiteName : String) (tests : List (IO TestResult)) : IO Bool := do
   IO.println s!"Running {suiteName}..."

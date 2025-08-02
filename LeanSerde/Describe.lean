@@ -25,14 +25,18 @@ private partial def analyzeSerialValue (sv : SerialValue) (seen : Std.HashSet St
         let childDescs := children.map (analyzeSerialValue · newSeen)
         .arr #[.str name, .arr childDescs]
 
-private def describeSerializableFormat (α : Type) [Serializable α] [Inhabited α] : Lean.Json :=
+private def describeSerializableFormat (α : Type) [Serializable α] [Inhabited α] : IO Lean.Json := do
   let dummyValue : α := default
-  let serialValue := encode dummyValue
-  analyzeSerialValue serialValue
+  let serialValue ← encode dummyValue
+  return analyzeSerialValue serialValue
 
 elab "LeanSerde.describeFormat" α:term : term => do
   let typeExpr ← elabType α
-  let exceptType ← elabType (← `(Except String Lean.Json))
+  let stringExpr ← mkConst ``String
+  let jsonExpr ← mkConst ``Lean.Json
+  let exceptExpr ← mkAppM ``Except #[stringExpr, jsonExpr]
+  let ioExceptType ← mkAppM ``IO #[exceptExpr]
+
   try
     let _serInst ← synthInstance (← mkAppM ``Serializable #[typeExpr])
     let inhabitedResult? ← try
@@ -43,17 +47,20 @@ elab "LeanSerde.describeFormat" α:term : term => do
 
     match inhabitedResult? with
     | some _ =>
-      let stx ← `(Except.ok (describeSerializableFormat $(← exprToSyntax typeExpr)))
-      elabTerm stx (some exceptType)
+      let typeStx ← exprToSyntax typeExpr
+      let stx ← `(do
+        let result ← describeSerializableFormat $(typeStx)
+        return Except.ok result)
+      elabTerm stx (some ioExceptType)
     | none =>
       let typeName := typeExpr.getAppFn.constName?.getD `unknown
       let errorMsg := s!"{typeName} is Serializable but missing Inhabited instance"
-      let stx ← `(Except.error $(quote errorMsg))
-      elabTerm stx (some exceptType)
+      let stx ← `(return Except.error $(quote errorMsg))
+      elabTerm stx (some ioExceptType)
   catch _ =>
     let typeName := typeExpr.getAppFn.constName?.getD `unknown
     let errorMsg := s!"{typeName} is not Serializable"
-    let stx ← `(Except.error $(quote errorMsg))
-    elabTerm stx (some exceptType)
+    let stx ← `(return Except.error $(quote errorMsg))
+    elabTerm stx (some ioExceptType)
 
 end LeanSerde
