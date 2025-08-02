@@ -5,6 +5,12 @@ import LeanSerde.MetaTypes
 
 open Lean Elab Command Term Meta Tactic
 
+
+/-
+This file is heavily inspired by https://github.com/leanprover-community/repl
+Thanks to all the contributors!
+-/
+
 namespace LeanSerde
 
 structure LeanContext where
@@ -20,12 +26,50 @@ structure LeanContext where
   tacticContext: Option Tactic.Context := none
   deriving Inhabited
 
-instance : Serializable LeanContext where
+structure SerializableLeanContext where
+  coreNextMacroScope : MacroScope := firstFrontendMacroScope + 1
+  coreNgen : NameGenerator := {}
+  coreContext : Option Core.Context := none
+
+  metaLctx : LocalContext := {}
+  metaLocalInstances : LocalInstances := #[]
+  metaDefEqCtx? : Option DefEqContext := none
+  metaSynthPendingDepth : Nat := 0
+  metaState : Option Meta.State := none
+
+  termDeclName? : Option Name := none
+  termMacroStack : MacroStack := []
+  termMayPostpone : Bool := true
+  termErrToSorry : Bool := true
+  termAutoBoundImplicit : Bool := false
+  termAutoBoundImplicits : PArray Expr := {}
+  termSectionVars : NameMap Name := {}
+  termSectionFVars : NameMap Expr := {}
+  termImplicitLambda : Bool := true
+  termIsNoncomputableSection : Bool := false
+  termIgnoreTCFailures : Bool := false
+  termInPattern : Bool := false
+  termSaveRecAppSyntax : Bool := true
+  termHolesAsSyntheticOpaque : Bool := false
+  termState : Option Term.State := none
+
+  cmdScopes : List Scope := [{ header := "" }]
+  cmdNextMacroScope : Nat := firstFrontendMacroScope + 1
+  cmdMaxRecDepth : Nat
+  cmdNgen : NameGenerator := {}
+  cmdContext : Option Command.Context := none
+
+  tacticState : Option Tactic.State := none
+  tacticContext : Option Tactic.Context := none
+  deriving Inhabited
+
+instance : Serializable SerializableLeanContext where
+  -- Kinda cheaty for now to avoid the complexity of serializing contexts and states.
   encode ctx := do
     let timestamp := ← IO.monoMsNow
     let processId ← IO.Process.getCurrentDir >>= fun dir => return dir.toString.hash
-    let path := s!"ctx_{timestamp}_{processId}.bin"
-    saveModuleData path `ctx (unsafe unsafeCast ctx)
+    let path := s!"compact_ctx_{timestamp}_{processId}.bin"
+    saveModuleData path `compactCtx (unsafe unsafeCast ctx)
     let data ← IO.FS.readBinFile path
     IO.FS.removeFile path
     encode data
@@ -33,17 +77,114 @@ instance : Serializable LeanContext where
     let data : ByteArray ← decode sv
     let timestamp := ← IO.monoMsNow
     let processId ← IO.Process.getCurrentDir >>= fun dir => return dir.toString.hash
-    let path := s!"ctx_{timestamp}_{processId}.bin"
+    let path := s!"compact_ctx_{timestamp}_{processId}.bin"
     IO.FS.writeBinFile path data
     let (obj, _) ← readModuleData path
     IO.FS.removeFile path
-    return (unsafe unsafeCast obj : LeanContext)
+    return (unsafe unsafeCast obj : SerializableLeanContext)
+
+namespace SerializableLeanContext
+
+def fromLeanContext (ctx : LeanContext) : IO SerializableLeanContext := do
+  return {
+    coreNextMacroScope := ctx.coreState.map (·.nextMacroScope) |>.getD (firstFrontendMacroScope + 1),
+    coreNgen := ctx.coreState.map (·.ngen) |>.getD {},
+    coreContext := ctx.coreContext,
+
+    metaLctx := ctx.metaContext.map (·.lctx) |>.getD {},
+    metaLocalInstances := ctx.metaContext.map (·.localInstances) |>.getD #[],
+    metaDefEqCtx? := ctx.metaContext.bind (·.defEqCtx?),
+    metaSynthPendingDepth := ctx.metaContext.map (·.synthPendingDepth) |>.getD 0,
+    metaState := ctx.metaState,
+
+    termDeclName? := ctx.termContext.bind (·.declName?),
+    termMacroStack := ctx.termContext.map (·.macroStack) |>.getD [],
+    termMayPostpone := ctx.termContext.map (·.mayPostpone) |>.getD true,
+    termErrToSorry := ctx.termContext.map (·.errToSorry) |>.getD true,
+    termAutoBoundImplicit := ctx.termContext.map (·.autoBoundImplicit) |>.getD false,
+    termAutoBoundImplicits := ctx.termContext.map (·.autoBoundImplicits) |>.getD {},
+    termSectionVars := ctx.termContext.map (·.sectionVars) |>.getD {},
+    termSectionFVars := ctx.termContext.map (·.sectionFVars) |>.getD {},
+    termImplicitLambda := ctx.termContext.map (·.implicitLambda) |>.getD true,
+    termIsNoncomputableSection := ctx.termContext.map (·.isNoncomputableSection) |>.getD false,
+    termIgnoreTCFailures := ctx.termContext.map (·.ignoreTCFailures) |>.getD false,
+    termInPattern := ctx.termContext.map (·.inPattern) |>.getD false,
+    termSaveRecAppSyntax := ctx.termContext.map (·.saveRecAppSyntax) |>.getD true,
+    termHolesAsSyntheticOpaque := ctx.termContext.map (·.holesAsSyntheticOpaque) |>.getD false,
+    termState := ctx.termState,
+
+    cmdScopes := ctx.cmdState.map (·.scopes) |>.getD [{ header := "" }],
+    cmdNextMacroScope := ctx.cmdState.map (·.nextMacroScope) |>.getD (firstFrontendMacroScope + 1),
+    cmdMaxRecDepth := ctx.cmdState.map (·.maxRecDepth) |>.getD 1000,
+    cmdNgen := ctx.cmdState.map (·.ngen) |>.getD {},
+    cmdContext := ctx.cmdContext,
+
+    tacticState := ctx.tacticState,
+    tacticContext := ctx.tacticContext
+  }
+
+def toLeanContext (compact : SerializableLeanContext) (env : Environment) : LeanContext := {
+  cmdState := some {
+    env,
+    scopes := compact.cmdScopes,
+    nextMacroScope := compact.cmdNextMacroScope,
+    maxRecDepth := compact.cmdMaxRecDepth,
+    ngen := compact.cmdNgen,
+    infoState := {},
+    traceState := {},
+    messages := {}
+  },
+  cmdContext := compact.cmdContext,
+  metaState := compact.metaState,
+  metaContext := some {
+    config := {},
+    lctx := compact.metaLctx,
+    localInstances := compact.metaLocalInstances,
+    defEqCtx? := compact.metaDefEqCtx?,
+    synthPendingDepth := compact.metaSynthPendingDepth
+  },
+  coreState := some {
+    env,
+    nextMacroScope := compact.coreNextMacroScope,
+    ngen := compact.coreNgen
+  },
+  coreContext := compact.coreContext,
+  termState := compact.termState,
+  termContext := some {
+    declName? := compact.termDeclName?,
+    macroStack := compact.termMacroStack,
+    mayPostpone := compact.termMayPostpone,
+    errToSorry := compact.termErrToSorry,
+    autoBoundImplicit := compact.termAutoBoundImplicit,
+    autoBoundImplicits := compact.termAutoBoundImplicits,
+    sectionVars := compact.termSectionVars,
+    sectionFVars := compact.termSectionFVars,
+    implicitLambda := compact.termImplicitLambda,
+    isNoncomputableSection := compact.termIsNoncomputableSection,
+    ignoreTCFailures := compact.termIgnoreTCFailures,
+    inPattern := compact.termInPattern,
+    saveRecAppSyntax := compact.termSaveRecAppSyntax,
+    holesAsSyntheticOpaque := compact.termHolesAsSyntheticOpaque
+  },
+  tacticState := compact.tacticState,
+  tacticContext := compact.tacticContext
+}
+
+end SerializableLeanContext
 
 structure LeanSnapshot where
   env : Environment
   rootGoals : List MVarId := []
   ctx : LeanContext := {}
-  deriving Serializable
+
+instance : Serializable LeanSnapshot where
+  encode snapshot := do
+    let compactCtx ← SerializableLeanContext.fromLeanContext snapshot.ctx
+    encode (snapshot.env, compactCtx, snapshot.rootGoals)
+  decode sv := do
+    let (env, compactCtx, rootGoals) ← decode sv
+    let ctx := SerializableLeanContext.toLeanContext compactCtx env
+    return { env, rootGoals, ctx }
 
 namespace LeanSnapshot
 

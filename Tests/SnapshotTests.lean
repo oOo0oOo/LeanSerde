@@ -32,14 +32,6 @@ def test_env_snapshot : IO TestResult := do
     else
       return TestResult.failure "Environment LeanSnapshot" "Content mismatch"
 
-def test_lean_context : IO TestResult := do
-  let ctx : LeanContext := {}
-  let bytes: ByteArray ← LeanSerde.serialize ctx
-  match (← LeanSerde.deserialize bytes : Except String LeanContext) with
-  | .error e => return TestResult.failure "LeanContext" s!"Failed to deserialize: {e}"
-  | .ok _decoded =>
-    return TestResult.success "LeanContext"
-
 def test_command_with_sorry : IO TestResult := do
   let snapshot ← LeanSnapshot.create
   let snapshot2 ← snapshot.command "theorem test : 1 + 1 = 2 := by sorry"
@@ -103,11 +95,16 @@ def test_multi_step_arithmetic : IO TestResult := do
   if snapshot2.complete? then
     return TestResult.failure "Multi-step arithmetic" "Expected initial goal from sorry"
 
-  let snapshot3 ← snapshot2.tactic "simp"
-  if snapshot3.complete? then
-    return TestResult.success "Multi-step arithmetic"
-  else
-    return TestResult.failure "Multi-step arithmetic" "Expected theorem to be complete after simp"
+  let ser : ByteArray := ← LeanSerde.serialize snapshot2
+  let snapshot2_deser := ← LeanSerde.deserialize ser
+  match snapshot2_deser with
+  | .error _ => return TestResult.failure "Multi-step arithmetic" "Failed to deserialize snapshot"
+  | .ok (snap2_deser: LeanSnapshot) => do
+    let snapshot3 ← snap2_deser.tactic "simp"
+    if snapshot3.complete? then
+      return TestResult.success "Multi-step arithmetic"
+    else
+      return TestResult.failure "Multi-step arithmetic" "Expected theorem to be complete after simp"
 
 def test_rewrite_steps : IO TestResult := do
   let snapshot ← LeanSnapshot.create
@@ -130,7 +127,6 @@ def run: IO Bool := do
   runTests "Snapshot Type Serialization" [
     test_empty_snapshot,
     test_env_snapshot,
-    test_lean_context,
     test_command_with_sorry,
     test_tactic_application,
     test_goals_formatting,
