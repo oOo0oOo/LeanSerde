@@ -8,7 +8,7 @@ import LeanSerde.PrimitiveTypes
 import LeanSerde.ContainerTypes
 import LeanSerde.LibraryTypes
 
-open Lean Environment
+open Lean Elab Command Term Meta Tactic
 
 namespace LeanSerde
 
@@ -200,8 +200,40 @@ instance : Serializable Lean.CompactedRegion where
 
 deriving instance LeanSerde.Serializable for Lean.EnvironmentHeader
 
--- Can only serialize a subset of Environment
-structure EnvironmentData where
+-- Serialize partial Environment
+namespace EnvironmentBuilder
+
+private def ensureSearchPath : IO Unit := do
+  -- This is kinda hacky, reconsider
+  let paths ← searchPathRef.get
+  if paths.isEmpty then
+    Lean.initSearchPath (← Lean.findSysroot)
+
+def fromImports (imports : List String) (trustLevel : UInt32 := 0) : IO Lean.Environment := do
+  ensureSearchPath
+  let imports := imports.map (·.toName) |>.map ({ module := · })
+  importModules imports.toArray {} trustLevel
+
+def fromOlean (oleanPath : System.FilePath) (trustLevel : UInt32 := 0) : IO Lean.Environment := do
+  ensureSearchPath
+  let moduleName ← moduleNameOfFileName oleanPath none
+  importModules #[{ module := moduleName }] {} trustLevel
+
+def empty : IO Lean.Environment := do
+  ensureSearchPath
+  mkEmptyEnvironment
+
+def minimal : IO Lean.Environment := do
+  ensureSearchPath
+  return (← fromImports ["Lean", "Init"])
+
+def std : IO Lean.Environment := do
+  ensureSearchPath
+  return (← fromImports ["Std", "Lean", "Init"])
+
+end EnvironmentBuilder
+
+structure EnvironmentConfig where
   imports : Array Import
   constants : List (Name × ConstantInfo)
   deriving LeanSerde.Serializable
@@ -209,15 +241,15 @@ structure EnvironmentData where
 instance : Serializable Lean.Environment where
   encode env := encode {
     imports := env.header.imports
-    constants := env.constants.map₂.toList : EnvironmentData
+    constants := env.constants.map₂.toList : EnvironmentConfig
   }
   decode sv := do
-    let senv : EnvironmentData ← decode sv
+    EnvironmentBuilder.ensureSearchPath
+    let senv : EnvironmentConfig ← decode sv
     let baseEnv ← importModules senv.imports {} 0 #[] false true
     baseEnv.replay (Std.HashMap.ofList senv.constants)
 
 -- Towards InfoTree
-
 -- StateM & Dynamic: Encode type information only
 instance {σ α} [Inhabited α] : Serializable (StateM σ α) where
   encode _ := return .compound "StateM.phantom" #[]

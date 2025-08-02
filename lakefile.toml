@@ -16,3 +16,4 @@ root = "Main"
 [[lean_exe]]
 name = "tests"
 root = "Tests.TestRunner"
+supportInterpreter = true

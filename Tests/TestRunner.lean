@@ -5,6 +5,7 @@ import Tests.StructureTests
 import Tests.LibraryTests
 import Tests.MetaTests
 import Tests.DescribeTests
+import Tests.SnapshotTests
 
 open LeanSerde
 
@@ -37,7 +38,8 @@ def main : IO Unit := do
     runTestSuite "Meta Types" MetaTests.run,
     runTestSuite "Refs Format" RefsTests.run,
     runTestSuite "Describe Functionality" DescribeTests.run,
-    runTestSuite "Monad Lifting" MonadLiftingTests.run
+    runTestSuite "Monad Lifting" MonadLiftingTests.run,
+    runTestSuite "Snapshot Types" SnapshotTests.run
   ].mapM id
 
   let totalTests := results.length

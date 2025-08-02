@@ -146,6 +146,22 @@ def test_empty_environment : IO TestResult := do
     else
       return TestResult.failure "Empty Environment" "Field mismatch"
 
+def test_environment_from_builder : IO TestResult := do
+  let env ← LeanSerde.EnvironmentBuilder.std
+  let bytes: ByteArray ← LeanSerde.serialize env
+  match (← LeanSerde.deserialize bytes : Except String Lean.Environment) with
+  | .error e => return TestResult.failure "Environment" s!"Failed to deserialize: {e}"
+  | .ok decoded =>
+    if env.mainModule == decoded.mainModule &&
+       env.isExporting == decoded.isExporting &&
+       env.asyncPrefix? == decoded.asyncPrefix? &&
+       env.header.trustLevel == decoded.header.trustLevel &&
+       env.constants.toList.length == decoded.constants.toList.length &&
+       env.const2ModIdx.size == decoded.const2ModIdx.size then
+      return TestResult.success "Environment"
+    else
+      return TestResult.failure "Environment" "Field mismatch"
+
 def test_info_tree : IO TestResult := do
   let mvarId := { name := Name.mkSimple "testMVar" : MVarId }
   let infoTreeHole := Lean.Elab.InfoTree.hole mvarId
@@ -177,6 +193,7 @@ def run: IO Bool := do
     test_metavar_context,
     test_constant_info,
     test_empty_environment,
+    test_environment_from_builder,
     test_info_tree
   ]
 end MetaTests
