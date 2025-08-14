@@ -41,7 +41,7 @@ instance : Serializable Float where
       if bits < 0 then
         throw s!"Invalid Float bits: {bits}"
       else
-        return (Float.ofBits bits)
+        return Float.ofBits (UInt64.ofNat bits)
     | .compound "Float" args => throw s!"Float expects 1 arg, got {args.size}"
     | other => throw s!"Expected Float compound, got {repr other}"
 
