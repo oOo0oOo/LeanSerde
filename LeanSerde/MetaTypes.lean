@@ -198,6 +198,7 @@ instance : Serializable Lean.CompactedRegion where
     | .nat n => return (USize.ofNat n)
     | other => throw s!"Expected CompactedRegion, got {repr other}"
 
+deriving instance LeanSerde.Serializable for Lean.IRPhases, Lean.EffectiveImport
 deriving instance LeanSerde.Serializable for Lean.EnvironmentHeader
 
 -- Serialize partial Environment
@@ -265,6 +266,7 @@ deriving instance LeanSerde.Serializable for Lean.Elab.ElabInfo, Lean.Elab.Choic
 deriving instance LeanSerde.Serializable for Lean.Elab.PartialTermInfo, Lean.Elab.TermInfo
 deriving instance LeanSerde.Serializable for Lean.Elab.CompletionInfo, Lean.Elab.DelabTermInfo
 deriving instance LeanSerde.Serializable for Lean.Elab.TacticInfo, Lean.Elab.CommandInfo
+deriving instance LeanSerde.Serializable for Lean.Elab.ErrorNameInfo
 deriving instance LeanSerde.Serializable for Lean.Elab.Info, Lean.NameGenerator
 deriving instance LeanSerde.Serializable for Lean.OpenDecl, Lean.FileMap
 deriving instance LeanSerde.Serializable for Lean.Elab.CommandContextInfo, Lean.Elab.PartialContextInfo
