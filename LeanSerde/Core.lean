@@ -44,7 +44,7 @@ partial def fromJson : Lean.Json → Except String SerialValue
     .ok (.compound name args)
   | .arr arr => .error s!"Expected [name, args], got array of size {arr.size}"
   | .obj obj => do
-    let some (Lean.Json.num id) := obj.find compare "ref"
+    let some (Lean.Json.num id) := obj.get? "ref"
       | .error "Invalid SerialValue JSON object"
     if id.exponent == 0 && id.mantissa >= 0 then .ok (.ref id.mantissa.natAbs)
     else .error s!"Expected natural number for ref, got {id}"

@@ -82,8 +82,23 @@ deriving instance LeanSerde.Serializable for Lean.Expr
 -- Towards MetavarContext
 deriving instance LeanSerde.Serializable for Lean.LocalDeclKind, Lean.LocalDecl
 
-instance {α : Type} [Serializable α] : Serializable (Lean.FVarIdMap α) :=
-  inferInstanceAs (Serializable (Lean.RBMap Lean.FVarId α (Name.quickCmp ·.name ·.name)))
+instance {α : Type} [Serializable α] : Serializable (Lean.FVarIdMap α) where
+  encode m := do
+    let entries ← m.toList.mapM (fun ⟨k, v⟩ => do
+      let encodedK ← encode k
+      let encodedV ← encode v
+      return .compound "Entry" #[encodedK, encodedV])
+    return .compound "FVarIdMap" entries.toArray
+  decode sv := do
+    let args ← decodeCompound "FVarIdMap" sv
+    let entries ← args.mapM (fun entry => match entry with
+      | .compound "Entry" #[k, v] =>
+        do
+          let key ← decode k
+          let value ← decode v
+          return (key, value)
+      | _ => throw s!"Expected Entry compound, got {repr entry}")
+    return (entries.toList.foldl (fun acc ⟨k, v⟩ => acc.insert k v) {})
 
 deriving instance LeanSerde.Serializable for Lean.LocalContext, Lean.MetavarKind, Lean.LocalInstance
 deriving instance LeanSerde.Serializable for Lean.MetavarDecl, Lean.DelayedMetavarAssignment, Lean.MetavarContext
@@ -306,14 +321,41 @@ instance : Serializable Lean.Elab.InfoTree where
   decode := decodeInfoTree
 
 -- Various
-instance {α : Type} [Serializable α] : Serializable (Lean.MVarIdMap α) :=
-  inferInstanceAs (Serializable (Lean.RBMap Lean.MVarId α (Name.quickCmp ·.name ·.name)))
+instance {α : Type} [Serializable α] : Serializable (Lean.MVarIdMap α) where
+  encode m := do
+    let entries ← m.toList.mapM (fun ⟨k, v⟩ => do
+      let encodedK ← encode k
+      let encodedV ← encode v
+      return .compound "Entry" #[encodedK, encodedV])
+    return .compound "MVarIdMap" entries.toArray
+  decode sv := do
+    let args ← decodeCompound "MVarIdMap" sv
+    let entries ← args.mapM (fun entry => match entry with
+      | .compound "Entry" #[k, v] =>
+        do
+          let key ← decode k
+          let value ← decode v
+          return (key, value)
+      | _ => throw s!"Expected Entry compound, got {repr entry}")
+    return (entries.toList.foldl (fun acc ⟨k, v⟩ => acc.insert k v) {})
 
-instance : Serializable Lean.FVarIdSet :=
-  inferInstanceAs (Serializable (Lean.RBTree Lean.FVarId (Name.quickCmp ·.name ·.name)))
+instance : Serializable Lean.FVarIdSet where
+  encode s := do
+    let encodedElems ← s.toList.mapM encode
+    return .compound "FVarIdSet" encodedElems.toArray
+  decode sv := do
+    let args ← decodeCompound "FVarIdSet" sv
+    let elems ← args.mapM decode
+    return (elems.toList.foldl (fun acc elem => acc.insert elem) {})
 
-instance : Serializable Lean.MVarIdSet :=
-  inferInstanceAs (Serializable (Lean.RBTree Lean.MVarId (Name.quickCmp ·.name ·.name)))
+instance : Serializable Lean.MVarIdSet where
+  encode s := do
+    let encodedElems ← s.toList.mapM encode
+    return .compound "MVarIdSet" encodedElems.toArray
+  decode sv := do
+    let args ← decodeCompound "MVarIdSet" sv
+    let elems ← args.mapM decode
+    return (elems.toList.foldl (fun acc elem => acc.insert elem) {})
 
 instance {ks : SyntaxNodeKinds} : Serializable (TSyntax ks) where
   encode t := encode t.raw

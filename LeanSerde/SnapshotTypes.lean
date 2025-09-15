@@ -137,7 +137,6 @@ def toLeanContext (compact : SerializableLeanContext) (env : Environment) : Lean
   cmdContext := compact.cmdContext,
   metaState := compact.metaState,
   metaContext := some {
-    config := {},
     lctx := compact.metaLctx,
     localInstances := compact.metaLocalInstances,
     defEqCtx? := compact.metaDefEqCtx?,
