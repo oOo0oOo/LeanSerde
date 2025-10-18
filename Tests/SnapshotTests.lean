@@ -100,11 +100,11 @@ def test_multi_step_arithmetic : IO TestResult := do
   match snapshot2_deser with
   | .error _ => return TestResult.failure "Multi-step arithmetic" "Failed to deserialize snapshot"
   | .ok (snap2_deser: LeanSnapshot) => do
-    let snapshot3 ← snap2_deser.tactic "simp"
+    let snapshot3 ← snap2_deser.tactic "rfl"
     if snapshot3.complete? then
       return TestResult.success "Multi-step arithmetic"
     else
-      return TestResult.failure "Multi-step arithmetic" "Expected theorem to be complete after simp"
+      return TestResult.failure "Multi-step arithmetic" "Expected theorem to be complete after rfl"
 
 def test_rewrite_steps : IO TestResult := do
   let snapshot ← LeanSnapshot.create

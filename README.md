@@ -5,8 +5,8 @@
 <h3 align="center">Type-safe serialization for Lean</h3>
 
 <p align="center">
-  <a href="https://github.com/leanprover/lean4/releases/tag/v4.23.0">
-    <img src="https://img.shields.io/badge/Lean-v4.23.0-blue" alt="Lean version" />
+  <a href="https://github.com/leanprover/lean4/releases/tag/v4.24.0">
+    <img src="https://img.shields.io/badge/Lean-v4.24.0-blue" alt="Lean version" />
   </a>
   <a href="">
     <img src="https://img.shields.io/github/last-commit/oOo0oOo/LeanSerde" alt="last update" />
@@ -172,6 +172,8 @@ Use `import LeanSerde.MetaTypes` to access meta types:
 ### LeanSnapshot
 
 Serializable snapshots of Lean elaboration state for proof checkpointing, interactive theorem proving, and distributed search.
+
+It is currently experimental and does not support all Lean features.
 
 ```lean
 import LeanSerde.SnapshotTypes
