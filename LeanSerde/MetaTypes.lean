@@ -282,6 +282,8 @@ deriving instance LeanSerde.Serializable for Lean.Elab.PartialTermInfo, Lean.Ela
 deriving instance LeanSerde.Serializable for Lean.Elab.CompletionInfo, Lean.Elab.DelabTermInfo
 deriving instance LeanSerde.Serializable for Lean.Elab.TacticInfo, Lean.Elab.CommandInfo
 deriving instance LeanSerde.Serializable for Lean.Elab.ErrorNameInfo
+deriving instance LeanSerde.Serializable for Lean.Elab.DocElabKind
+deriving instance LeanSerde.Serializable for Lean.Elab.DocInfo, Lean.Elab.DocElabInfo
 deriving instance LeanSerde.Serializable for Lean.Elab.Info, Lean.NameGenerator
 deriving instance LeanSerde.Serializable for Lean.OpenDecl, Lean.FileMap
 deriving instance LeanSerde.Serializable for Lean.Elab.CommandContextInfo, Lean.Elab.PartialContextInfo

@@ -102,7 +102,7 @@ instance : Serializable String where
     | .str s => return s
     | other => throw s!"Expected String, got {repr other}"
 
-instance : LeanSerde.Serializable String.Pos where
+instance : LeanSerde.Serializable String.Pos.Raw where
   encode pos := return .compound "StringPos" #[.nat pos.byteIdx]
   decode sv := do
     match sv with
@@ -134,7 +134,7 @@ instance : Serializable Char where
   decode
     | .compound "Char" #[.str s] =>
       if s.length == 1 then
-        return (s.get 0)
+        return (String.Pos.Raw.get s ⟨0⟩)
       else
         throw s!"Expected Char, got string of length {s.length}"
     | .compound "Char" args => throw s!"Char expects 1 arg, got {args.size}"

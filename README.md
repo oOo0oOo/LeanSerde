@@ -5,8 +5,8 @@
 <h3 align="center">Type-safe serialization for Lean</h3>
 
 <p align="center">
-  <a href="https://github.com/leanprover/lean4/releases/tag/v4.24.0">
-    <img src="https://img.shields.io/badge/Lean-v4.24.0-blue" alt="Lean version" />
+  <a href="https://github.com/leanprover/lean4/releases/tag/v4.25.0">
+    <img src="https://img.shields.io/badge/Lean-v4.25.0-blue" alt="Lean version" />
   </a>
   <a href="">
     <img src="https://img.shields.io/github/last-commit/oOo0oOo/LeanSerde" alt="last update" />
@@ -15,10 +15,6 @@
     <img src="https://img.shields.io/github/license/oOo0oOo/LeanSerde.svg" alt="license" />
   </a>
 </p>
-
-## WIP!
-
-Feedback welcome!
 
 ## Key Features
 

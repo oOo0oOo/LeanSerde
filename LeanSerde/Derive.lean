@@ -121,7 +121,7 @@ private def mkConstructorData (inductVal : InductiveVal) (ctor : ConstructorVal)
   let ctorId := mkIdent ctor.name
 
   let ctorName := if isStructure then
-    inductVal.name.toString.split (· == '.') |>.getLast!
+    inductVal.name.toString.splitToList (· == '.') |>.getLast!
   else
     ctor.name.toString
 
