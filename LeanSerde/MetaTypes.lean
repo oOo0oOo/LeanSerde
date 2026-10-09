@@ -101,7 +101,7 @@ instance {α : Type} [Serializable α] : Serializable (Lean.FVarIdMap α) where
     return (entries.toList.foldl (fun acc ⟨k, v⟩ => acc.insert k v) {})
 
 deriving instance LeanSerde.Serializable for Lean.LocalContext, Lean.MetavarKind, Lean.LocalInstance
-deriving instance LeanSerde.Serializable for Lean.MetavarDecl, Lean.DelayedMetavarAssignment, Lean.MetavarContext
+deriving instance LeanSerde.Serializable for Lean.MetavarDecl, Lean.DelayedMetavarAssignment, Lean.LevelMetavarDecl, Lean.MetavarContext
 
 -- Towards ConstantInfo
 deriving instance LeanSerde.Serializable for Lean.ConstantVal, Lean.AxiomVal, Lean.ReducibilityHints, Lean.DefinitionSafety
@@ -177,8 +177,14 @@ instance : Serializable Kernel.Diagnostics where
       throw s!"Diagnostics expects 2 args, got {args.size}"
 
 instance : Serializable Lean.Options where
-  encode := encode (α := Lean.KVMap)
-  decode := decode (α := Lean.KVMap)
+  encode opts := do
+    let mut entries := []
+    for (key, value) in opts do
+      entries := (key, value) :: entries
+    encode (⟨entries⟩ : Lean.KVMap)
+  decode sv := do
+    let values : Lean.KVMap ← decode sv
+    return values.entries.foldl (fun opts (key, value) => opts.insert key value) {}
 
 instance : Serializable Lean.ModuleData where
   encode md := do
@@ -207,19 +213,20 @@ instance : Serializable Lean.ModuleData where
     else
       throw s!"ModuleData expects 5 args, got {args.size}"
 
-instance : Serializable Lean.CompactedRegion where
-  encode r := return .nat r.toNat
-  decode := fun
-    | .nat n => return (USize.ofNat n)
-    | other => throw s!"Expected CompactedRegion, got {repr other}"
-
-deriving instance LeanSerde.Serializable for Lean.IRPhases, Lean.EffectiveImport
-deriving instance LeanSerde.Serializable for Lean.EnvironmentHeader
+-- Imported memory regions are reloaded from imports, never serialized as pointers.
+instance : Serializable Lean.EnvironmentHeader where
+  encode header := encode (header.mainModule, header.isModule, header.imports)
+  decode sv := do
+    let (mainModule, isModule, imports) : Name × Bool × Array Import ← decode sv
+    let (_, state) ← importModulesCore imports |>.run
+    let env ← finalizeImport state imports {} 0 false false (isModule := isModule)
+    return (env.setMainModule mainModule).header
 
 -- Serialize partial Environment
 namespace EnvironmentBuilder
 
 private def ensureSearchPath : IO Unit := do
+  unsafe enableInitializersExecution
   -- This is kinda hacky, reconsider
   let paths ← searchPathRef.get
   if paths.isEmpty then
@@ -258,7 +265,7 @@ instance : Serializable Lean.Environment where
     EnvironmentBuilder.ensureSearchPath
     let senv : EnvironmentConfig ← decode sv
     let baseEnv ← importModules senv.imports {} 0 #[] false true
-    baseEnv.replay (Std.HashMap.ofList senv.constants)
+    return Environment.ofKernelEnv (← baseEnv.toKernelEnv.replay (Std.HashMap.ofList senv.constants))
 
 -- Towards InfoTree
 -- StateM & Dynamic: Encode type information only
@@ -278,6 +285,11 @@ deriving instance LeanSerde.Serializable for Lean.Elab.FieldInfo, Lean.Elab.Opti
 deriving instance LeanSerde.Serializable for Lean.Elab.FieldRedeclInfo, Lean.Elab.FVarAliasInfo
 deriving instance LeanSerde.Serializable for Lean.Elab.UserWidgetInfo, Lean.Elab.CustomInfo
 deriving instance LeanSerde.Serializable for Lean.Elab.ElabInfo, Lean.Elab.ChoiceInfo
+-- Executable hover callbacks cannot be reconstructed from serialized data.
+instance : Serializable (Lean.PPContext → IO String) where
+  encode _ := throw (IO.userError "Cannot serialize an executable pretty-printing callback")
+  decode _ := throw "Cannot deserialize an executable pretty-printing callback"
+
 deriving instance LeanSerde.Serializable for Lean.Elab.PartialTermInfo, Lean.Elab.TermInfo
 deriving instance LeanSerde.Serializable for Lean.Elab.CompletionInfo, Lean.Elab.DelabTermInfo
 deriving instance LeanSerde.Serializable for Lean.Elab.TacticInfo, Lean.Elab.CommandInfo

@@ -28,7 +28,7 @@ instance : Serializable Std.Time.Year.Offset where
     else
       throw s!"Year.Offset expects 2 args, got {args.size}"
 
-def serializableBoundedOrdinal
+@[instance_reducible] def serializableBoundedOrdinal
   (α : Type) (name : String) (lo hi : Nat)
   (toNat : α → Nat) (ofNat : (n : Nat) → (h : n ≥ lo ∧ n ≤ hi) → α)
   : Serializable α where
@@ -46,7 +46,7 @@ def serializableBoundedOrdinal
     else
       throw s!"{name} expects 1 arg, got {args.size}"
 
-def serializableUpperBoundedOrdinal
+@[instance_reducible] def serializableUpperBoundedOrdinal
   (α : Type) (name : String) (hi : Nat)
   (toNat : α → Nat) (ofNat : (n : Nat) → (h : n ≤ hi) → α)
   : Serializable α where
@@ -86,11 +86,11 @@ instance : Serializable Std.Time.Month.Ordinal :=
     (fun o => o.val.natAbs)
     (fun n h => Std.Time.Month.Ordinal.ofNat n h)
 
-instance : Serializable Std.Time.Week.Ordinal :=
+instance : Serializable Std.Time.Week.OfYear.Ordinal :=
   serializableBoundedOrdinal
-    Std.Time.Week.Ordinal "WeekOrdinal" 1 53
+    Std.Time.Week.OfYear.Ordinal "WeekOrdinal" 1 53
     (fun o => o.val.natAbs)
-    (fun n h => Std.Time.Week.Ordinal.ofNat n h)
+    (fun n h => Std.Time.Week.OfYear.Ordinal.ofNat n h)
 
 instance : Serializable Std.Time.Weekday :=
   serializableBoundedOrdinal
@@ -134,15 +134,18 @@ instance : Serializable Std.Time.Nanosecond.Ordinal :=
 
 -- Timestamp
 instance : Serializable Std.Time.Timestamp where
-  encode ts := return (.compound "Timestamp" #[.nat ts.toSecondsSinceUnixEpoch.val.natAbs])
+  encode ts := do
+    let nanos := ts.toNanosecondsSinceUnixEpoch.val
+    return .compound "Timestamp.nanoseconds" #[.nat nanos.natAbs, .bool (nanos >= 0)]
   decode sv := do
-    let args ← decodeCompound "Timestamp" sv
-    if args.size = 1 then
-      match args[0]! with
-      | .nat seconds => return (Std.Time.Timestamp.ofSecondsSinceUnixEpoch ⟨Int.ofNat seconds⟩)
-      | other => throw s!"Expected Nat for timestamp seconds, got {repr other}"
-    else
-      throw "Timestamp expects 1 arg"
+    match sv with
+    | .compound "Timestamp.nanoseconds" #[.nat magnitude, .bool nonnegative] =>
+      return Std.Time.Timestamp.ofNanosecondsSinceUnixEpoch
+        ⟨if nonnegative then Int.ofNat magnitude else -Int.ofNat magnitude⟩
+    | .compound "Timestamp" #[.nat seconds] =>
+      -- Continue accepting legacy nonnegative, second-resolution timestamps.
+      return Std.Time.Timestamp.ofSecondsSinceUnixEpoch ⟨Int.ofNat seconds⟩
+    | _ => throw "Expected Timestamp.nanoseconds or a legacy Timestamp"
 
 -- PlainDate, PlainTime, PlainDateTime
 instance : Serializable Std.Time.PlainDate where
@@ -262,7 +265,7 @@ instance : Serializable Std.Time.TimeZone.ZoneRules where
     else throw "ZoneRules expects at least 8 args"
 
 -- ZonedDateTime serialization
-instance : Serializable Std.Time.ZonedDateTime where
+instance : Serializable Std.Time.DateTime where
   encode zdt := do
     let timestamp ← encode zdt.timestamp
     let timezone ← encode zdt.timezone
@@ -272,7 +275,7 @@ instance : Serializable Std.Time.ZonedDateTime where
     if args.size = 2 then
       let timestamp : Std.Time.Timestamp ← decode args[0]!
       let timezone : Std.Time.TimeZone ← decode args[1]!
-      return (Std.Time.ZonedDateTime.ofTimestampWithZone timestamp timezone)
+      return (Std.Time.DateTime.ofTimestampWithZone timestamp timezone)
     else
       throw s!"ZonedDateTime expects 2 args, got {args.size}"
 

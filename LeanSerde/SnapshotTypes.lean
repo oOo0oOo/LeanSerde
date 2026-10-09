@@ -41,8 +41,7 @@ structure SerializableLeanContext where
   termMacroStack : MacroStack := []
   termMayPostpone : Bool := true
   termErrToSorry : Bool := true
-  termAutoBoundImplicit : Bool := false
-  termAutoBoundImplicits : PArray Expr := {}
+  termAutoBoundImplicitContext : Option AutoBoundImplicitContext := none
   termSectionVars : NameMap Name := {}
   termSectionFVars : NameMap Expr := {}
   termImplicitLambda : Bool := true
@@ -64,24 +63,22 @@ structure SerializableLeanContext where
   deriving Inhabited
 
 instance : Serializable SerializableLeanContext where
-  -- Kinda cheaty for now to avoid the complexity of serializing contexts and states.
-  encode ctx := do
-    let timestamp := ← IO.monoMsNow
-    let processId ← IO.Process.getCurrentDir >>= fun dir => return dir.toString.hash
-    let path := s!"compact_ctx_{timestamp}_{processId}.bin"
-    saveModuleData path `compactCtx (unsafe unsafeCast ctx)
+  encode ctx := IO.FS.withTempDir fun dir => do
+    let path := dir / "context.bin"
+    let _ ← unsafe CompactedRegion.save path `compactCtx ctx #[] none
     let data ← IO.FS.readBinFile path
-    IO.FS.removeFile path
-    encode data
+    return .compound "LeanContextBlob.v1" #[.str Lean.versionString, ← encode data]
   decode sv := do
-    let data : ByteArray ← decode sv
-    let timestamp := ← IO.monoMsNow
-    let processId ← IO.Process.getCurrentDir >>= fun dir => return dir.toString.hash
-    let path := s!"compact_ctx_{timestamp}_{processId}.bin"
-    IO.FS.writeBinFile path data
-    let (obj, _) ← readModuleData path
-    IO.FS.removeFile path
-    return (unsafe unsafeCast obj : SerializableLeanContext)
+    let args ← decodeCompound "LeanContextBlob.v1" sv
+    let #[.str version, payload] := args | throw "Invalid Lean context blob"
+    unless version == Lean.versionString do
+      throw s!"Snapshot requires Lean {version}; running {Lean.versionString}"
+    let data : ByteArray ← decode payload
+    liftM <| IO.FS.withTempDir fun dir => do
+      let path := dir / "context.bin"
+      IO.FS.writeBinFile path data
+      let (ctx, _) ← unsafe CompactedRegion.read (α := SerializableLeanContext) path #[]
+      return ctx
 
 namespace SerializableLeanContext
 
@@ -101,8 +98,7 @@ def fromLeanContext (ctx : LeanContext) : IO SerializableLeanContext := do
     termMacroStack := ctx.termContext.map (·.macroStack) |>.getD [],
     termMayPostpone := ctx.termContext.map (·.mayPostpone) |>.getD true,
     termErrToSorry := ctx.termContext.map (·.errToSorry) |>.getD true,
-    termAutoBoundImplicit := ctx.termContext.map (·.autoBoundImplicit) |>.getD false,
-    termAutoBoundImplicits := ctx.termContext.map (·.autoBoundImplicits) |>.getD {},
+    termAutoBoundImplicitContext := ctx.termContext.bind (·.autoBoundImplicitContext),
     termSectionVars := ctx.termContext.map (·.sectionVars) |>.getD {},
     termSectionFVars := ctx.termContext.map (·.sectionFVars) |>.getD {},
     termImplicitLambda := ctx.termContext.map (·.implicitLambda) |>.getD true,
@@ -154,8 +150,7 @@ def toLeanContext (compact : SerializableLeanContext) (env : Environment) : Lean
     macroStack := compact.termMacroStack,
     mayPostpone := compact.termMayPostpone,
     errToSorry := compact.termErrToSorry,
-    autoBoundImplicit := compact.termAutoBoundImplicit,
-    autoBoundImplicits := compact.termAutoBoundImplicits,
+    autoBoundImplicitContext := compact.termAutoBoundImplicitContext,
     sectionVars := compact.termSectionVars,
     sectionFVars := compact.termSectionFVars,
     implicitLambda := compact.termImplicitLambda,
@@ -179,9 +174,14 @@ structure LeanSnapshot where
 instance : Serializable LeanSnapshot where
   encode snapshot := do
     let compactCtx ← SerializableLeanContext.fromLeanContext snapshot.ctx
-    encode (snapshot.env, compactCtx, snapshot.rootGoals)
+    return .compound "LeanSnapshot.v1" #[.str Lean.versionString,
+      ← encode (snapshot.env, compactCtx, snapshot.rootGoals)]
   decode sv := do
-    let (env, compactCtx, rootGoals) ← decode sv
+    let args ← decodeCompound "LeanSnapshot.v1" sv
+    let #[.str version, payload] := args | throw "Invalid Lean snapshot"
+    unless version == Lean.versionString do
+      throw s!"Snapshot requires Lean {version}; running {Lean.versionString}"
+    let (env, compactCtx, rootGoals) ← decode payload
     let ctx := SerializableLeanContext.toLeanContext compactCtx env
     return { env, rootGoals, ctx }
 

@@ -46,7 +46,7 @@ def main : IO Unit := do
   let _ : ByteArray := ← LeanSerde.serialize [true, false, true]
   let _ : ByteArray := ← LeanSerde.serialize [[1, 2], [3, 4], []]
   let _ : ByteArray := ← LeanSerde.serialize (System.FilePath.mk "/tmp/test.txt")
-  let _ : ByteArray := ← LeanSerde.serialize (Std.Time.PlainDateTime.ofDaysSinceUNIXEpoch 1000 ⟨0, 0, 0, 0⟩)
+  let _ : ByteArray := ← LeanSerde.serialize (Std.Time.PlainDateTime.ofWallTime (.ofSeconds ⟨86400000⟩))
   let _ : ByteArray := ← LeanSerde.serialize (some (some (some (42 : Nat))))
 
   -- Describe the serialization format

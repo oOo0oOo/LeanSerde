@@ -110,7 +110,7 @@ instance : LeanSerde.Serializable String.Pos.Raw where
     | .compound "StringPos" args => throw s!"StringPos expects 1 arg, got {args.size}"
     | other => throw s!"Expected StringPos compound, got {repr other}"
 
-instance : Serializable Substring where
+instance : Serializable Substring.Raw where
   encode sub := do
     let str ← encode sub.str
     let startPos ← encode sub.startPos
@@ -130,7 +130,7 @@ instance : Serializable Substring where
     | other => throw s!"Expected Substring compound, got {repr other}"
 
 instance : Serializable Char where
-  encode c := return .compound "Char" #[.str (String.mk [c])]
+  encode c := return .compound "Char" #[.str (String.ofList [c])]
   decode
     | .compound "Char" #[.str s] =>
       if s.length == 1 then

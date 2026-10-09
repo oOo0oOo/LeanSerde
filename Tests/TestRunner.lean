@@ -1,3 +1,4 @@
+import Tests.GraphTests
 import Tests.PrimitiveTests
 import Tests.TimeTests
 import Tests.ContainerTests
@@ -28,6 +29,7 @@ def main : IO Unit := do
   IO.println "====================="
 
   let results ← [
+    runTestSuite "Graph regressions" GraphTests.run,
     runTestSuite "Primitive Types" PrimitiveTests.run,
     runTestSuite "Time Types" TimeTests.run,
     runTestSuite "Container Types" ContainerTests.run,

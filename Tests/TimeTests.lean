@@ -59,10 +59,10 @@ def test_dst_zone_rules : IO TestResult := do
 
 def test_zoned_datetime_impl : IO TestResult := do
   let utcZone := Std.Time.TimeZone.mk ⟨0⟩ "UTC" "UTC" false
-  let zonedDateTime := Std.Time.ZonedDateTime.ofTimestampWithZone
+  let zonedDateTime := Std.Time.DateTime.ofTimestampWithZone
     (Std.Time.Timestamp.ofSecondsSinceUnixEpoch ⟨2000000000⟩) utcZone
   let bytes: ByteArray ← LeanSerde.serialize zonedDateTime
-  match (← LeanSerde.deserialize bytes : Except String Std.Time.ZonedDateTime) with
+  match (← LeanSerde.deserialize bytes : Except String Std.Time.DateTime) with
   | .error e => return TestResult.failure "ZonedDateTime" s!"Failed to deserialize: {e}"
   | .ok deserialized =>
     if deserialized.timestamp == zonedDateTime.timestamp &&
@@ -82,7 +82,7 @@ def run: IO Bool := do
   let result1 ← runTests "Time Units" [
     test_roundtrip "Year" (Std.Time.Year.Offset.ofInt 2023),
     test_roundtrip "Month" (Std.Time.Month.Ordinal.ofNat 5),
-    test_roundtrip "Week" (Std.Time.Week.Ordinal.ofNat 2),
+    test_roundtrip "Week" (Std.Time.Week.OfYear.Ordinal.ofNat 2),
     test_roundtrip "Weekday" (Std.Time.Weekday.ofNat 3),
     test_roundtrip "Day" (Std.Time.Day.Ordinal.ofNat 15),
     test_roundtrip "Hour" (Std.Time.Hour.Ordinal.ofNat 10 (by decide)),

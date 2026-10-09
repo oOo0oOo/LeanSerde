@@ -60,8 +60,31 @@ structure GraphData where
   objects : Array SerialValue
   deriving Lean.ToJson, Lean.FromJson
 
+-- Preserve structural equality and wire ordering while hashing each subtree once.
+private inductive HashedValue where
+  | mk (value : SerialValue) (cachedHash : UInt64) (children : Array HashedValue)
+  deriving Inhabited
+
+private def HashedValue.value : HashedValue → SerialValue
+  | .mk value _ _ => value
+private def HashedValue.cachedHash : HashedValue → UInt64
+  | .mk _ hash _ => hash
+private def HashedValue.children : HashedValue → Array HashedValue
+  | .mk _ _ children => children
+
+private instance : Hashable HashedValue := ⟨HashedValue.cachedHash⟩
+private instance : BEq HashedValue := ⟨fun a b => a.value == b.value⟩
+
+private partial def hashTree (value : SerialValue) : HashedValue :=
+  match value with
+  | .compound name children =>
+    let children := children.map hashTree
+    let childrenHash := children.foldl (fun acc child => mixHash acc child.cachedHash) 7
+    .mk value (mixHash 4 (mixHash (hash name) childrenHash)) children
+  | _ => .mk value (hash value) #[]
+
 private structure EncodeState where
-  seen : Std.HashMap SerialValue Nat
+  seen : Std.HashMap HashedValue Nat
   nextId : Nat
   objects : Array SerialValue
 
@@ -101,64 +124,70 @@ class Serializable (α : Type) where
 
 export Serializable (encode decode)
 
-private partial def countOccurrences (sv : SerialValue) (counts : Std.HashMap SerialValue Nat) : Std.HashMap SerialValue Nat :=
-  -- Count occurrences of SerialValue in a structure
-  match sv with
-  | .str _ | .nat _ | .bool _ | .ref _ => counts
-  | .compound _name children =>
-    let counts := counts.insert sv (counts.getD sv 0 + 1)
-    children.foldl (fun acc child => countOccurrences child acc) counts
+private partial def countOccurrences (node : HashedValue)
+    (counts : Std.HashMap HashedValue Nat) : Std.HashMap HashedValue Nat :=
+  match node.value with
+  | .compound _ _ =>
+    let counts := counts.insert node (counts.getD node 0 + 1)
+    node.children.foldl (fun acc child => countOccurrences child acc) counts
+  | _ => counts
 
-private partial def encodeWithRefs (sv : SerialValue) (shared : Std.HashMap SerialValue Nat) : EncodeGraphM SerialValue := do
-  -- Encode a SerialValue, replacing shared values with references.
-  match sv with
-  | .str _ | .nat _ | .bool _ | .ref _ => return sv
-  | .compound name children =>
-    if shared.getD sv 0 > 1 then
+private partial def encodeWithRefs (node : HashedValue)
+    (shared : Std.HashMap HashedValue Nat) : EncodeGraphM SerialValue := do
+  match node.value with
+  | .compound name _ =>
+    if shared.getD node 0 > 1 then
       let state ← get
-      match state.seen.get? sv with
-      | some id =>
-        return .ref id
+      match state.seen.get? node with
+      | some id => return .ref id
       | none =>
         let newId := state.nextId
         modify fun s => { s with
-          seen := s.seen.insert sv newId,
+          seen := s.seen.insert node newId,
           nextId := newId + 1,
-          objects := s.objects.push sv
+          objects := s.objects.push node.value
         }
         return .ref newId
     else
-      let children' ← children.mapM (encodeWithRefs · shared)
-      return .compound name children'
+      let children ← node.children.mapM (encodeWithRefs · shared)
+      return .compound name children
+  | other => return other
 
 def encodeGraph {α : Type} [Serializable α] (obj : α) : IO GraphData := do
-  let initialSv ← encode obj
-  let counts := countOccurrences initialSv {}
+  let tree := hashTree (← encode obj)
+  let counts := countOccurrences tree {}
   let sharedValues := counts.filter (fun _ count => count > 1)
-  let (root, state) := (encodeWithRefs initialSv sharedValues).run EncodeState.empty
+  let (root, state) := (encodeWithRefs tree sharedValues).run EncodeState.empty
   return ⟨root, state.objects⟩
 
-partial def decodeGraph {α : Type} [Serializable α] (gd : GraphData) : DecodeM α := do
-  -- First, resolve all refs in the entire structure to get a ref-free tree
-  -- Then decode the root value
-  let rec resolveRefs (sv : SerialValue) : IO (Except String SerialValue) :=
-    match sv with
-    | .ref id =>
-      if h : id < gd.objects.size then
-        resolveRefs gd.objects[id]
-      else
-        return .error s!"Reference {id} out of bounds"
-    | .compound name children => do
-      let mut resolved : Array SerialValue := #[]
-      for child in children do
-        match ← resolveRefs child with
-        | .ok childResolved => resolved := resolved.push childResolved
-        | .error e => return .error e
-      return .ok (.compound name resolved)
-    | other => return .ok other
+private structure ResolveState where
+  active : Std.HashSet Nat := {}
+  resolved : Std.HashMap Nat SerialValue := {}
 
-  let resolvedRoot ← resolveRefs gd.root
-  decode resolvedRoot
+private partial def resolveRefs (gd : GraphData) (sv : SerialValue) :
+    ExceptT String (StateRefT ResolveState IO) SerialValue := do
+  match sv with
+  | .ref id =>
+    if let some value := (← get).resolved[id]? then return value
+    if (← get).active.contains id then throw s!"Cyclic reference {id}"
+    if h : id < gd.objects.size then
+      modify fun s => { s with active := s.active.insert id }
+      let value ← resolveRefs gd gd.objects[id]
+      modify fun s => { s with
+        active := s.active.erase id,
+        resolved := s.resolved.insert id value }
+      return value
+    else
+      throw s!"Reference {id} out of bounds"
+  | .compound name children =>
+    return .compound name (← children.mapM (resolveRefs gd))
+  | other => return other
+
+partial def decodeGraph {α : Type} [Serializable α] (gd : GraphData) : DecodeM α := do
+  let (result, _) ← (resolveRefs gd gd.root).run.run {}
+  match result with
+  | .error e => throw e
+  | .ok root => decode root
 
 def decodeCompound (expectedName : String) (sv : SerialValue) : DecodeM (Array SerialValue) := do
   match sv with

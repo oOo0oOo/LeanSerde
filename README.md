@@ -5,8 +5,8 @@
 <h3 align="center">Type-safe serialization for Lean</h3>
 
 <p align="center">
-  <a href="https://github.com/leanprover/lean4/releases/tag/v4.25.0">
-    <img src="https://img.shields.io/badge/Lean-v4.25.0-blue" alt="Lean version" />
+  <a href="https://github.com/leanprover/lean4/releases/tag/v4.34.1">
+    <img src="https://img.shields.io/badge/Lean-v4.34.1-blue" alt="Lean version" />
   </a>
   <a href="">
     <img src="https://img.shields.io/github/last-commit/oOo0oOo/LeanSerde" alt="last update" />
@@ -84,7 +84,7 @@ def main : IO Unit := do
   let _ : ByteArray := ← LeanSerde.serialize [true, false, true]
   let _ : ByteArray := ← LeanSerde.serialize [[1, 2], [3, 4], []]
   let _ : ByteArray := ← LeanSerde.serialize (System.FilePath.mk "/tmp/test.txt")
-  let _ : ByteArray := ← LeanSerde.serialize (Std.Time.PlainDateTime.ofDaysSinceUNIXEpoch 1000 ⟨0, 0, 0, 0⟩)
+  let _ : ByteArray := ← LeanSerde.serialize (Std.Time.PlainDateTime.ofWallTime (.ofSeconds ⟨86400000⟩))
   let _ : ByteArray := ← LeanSerde.serialize (some (some (some (42 : Nat))))
 
   -- Describe the serialization format
@@ -126,14 +126,14 @@ def main : IO Unit := do
 | Lean.Json                                 | ok          |
 | Lean.Position                             | ok          |
 | Std.Time.Year.Era, Year.Offset            | ok          |
-| Std.Time.Month.Ordinal, Week.Ordinal      | ok          |
+| Std.Time.Month.Ordinal, Week.OfYear.Ordinal      | ok          |
 | Std.Time.Weekday, Day.Ordinal             | ok          |
 | Std.Time.Hour.Ordinal, Minute.Ordinal     | ok          |
 | Std.Time.Second.Ordinal, Millisecond.Ordinal, Nanosecond.Ordinal | ok |
 | Std.Time.Timestamp                        | ok          |
 | Std.Time.PlainDate, PlainTime, PlainDateTime | ok       |
 | Std.Time.TimeZone, TimeZone.ZoneRules     | ok          |
-| Std.Time.ZonedDateTime                    | ok          |
+| Std.Time.DateTime                    | ok          |
 
 ### Meta Types
 
@@ -148,7 +148,8 @@ Use `import LeanSerde.MetaTypes` to access meta types:
 | Lean.Expr                                 | ok          |
 | Lean.LocalDeclKind, LocalDecl, LocalContext, MetavarKind, LocalInstance, MetavarDecl, DelayedMetavarAssignment, MetavarContext | ok |
 | Lean.ConstantVal, AxiomVal, ReducibilityHints, DefinitionSafety, TheoremVal, OpaqueVal, QuotKind, QuotVal, ConstructorVal, InductiveVal, DefinitionVal, RecursorRule, RecursorVal, ConstantInfo | ok |
-| Lean.Import, ModuleIdx, CompactedRegion | ok |
+| Lean.Import, ModuleIdx | ok |
+| CompactedRegion | unsupported |
 | Lean.ModuleData, EnvironmentHeader, EnvironmentData, Environment | partial |
 | Lean.NameSet, NameMap String, SMap        | ok          |
 | Kernel.Diagnostics                        | ok          |
@@ -294,3 +295,10 @@ lake test
 ## License
 
 MIT
+## Compiler-state compatibility
+
+Compiler metadata and experimental snapshots target Lean 4.34.1 and are not portable across Lean versions. Imported environment regions are rebuilt from imports; raw memory addresses are never serialized. Executable pretty-printing callbacks cannot be serialized. Snapshot blobs must only be loaded from trusted sources with the same Lean version and imports.
+
+### Encoding benchmark
+
+Run `lake exe encoding_bench` for native timing of nested, unshared values. On the same Lean 4.34.1 toolchain, ten encodings at depth 800 took 227 ms before caching subtree hashes and 34 ms afterwards. These measurements describe this workload, not a general serialization speedup. Graph decoding caches resolved references and rejects cycles. Timestamps preserve signed nanoseconds; decoding also accepts the legacy nonnegative second-resolution representation.
